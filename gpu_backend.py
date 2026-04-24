@@ -79,10 +79,25 @@ def _find_mmproj(model_path):
 def _get_chat_handler(clip_model_path):
     """根据 mmproj 路径创建正确的 chat handler
     
-    优先级: Qwen2.5/3 VL > LLaVA 1.6 > LLaVA 1.5 > 通用
+    优先级: Qwen3.5 > Qwen2.5 VL > Qwen3 VL > LLaVA 1.6 > LLaVA 1.5 > 通用
     """
     if not clip_model_path or not os.path.exists(clip_model_path):
         return None
+    # Qwen3.5 专用 handler（0.3.36+）
+    try:
+        from llama_cpp.llama_chat_format import Qwen35ChatHandler
+        handler = Qwen35ChatHandler(clip_model_path=clip_model_path)
+        print(f"[llama] 使用 Qwen35ChatHandler: {clip_model_path}")
+        return handler
+    except Exception as e:
+        print(f"[llama] Qwen35ChatHandler 加载失败: {e}")
+    try:
+        from llama_cpp.llama_chat_format import Qwen3VLChatHandler
+        handler = Qwen3VLChatHandler(clip_model_path=clip_model_path)
+        print(f"[llama] 使用 Qwen3VLChatHandler: {clip_model_path}")
+        return handler
+    except Exception as e:
+        print(f"[llama] Qwen3VLChatHandler 加载失败: {e}")
     try:
         from llama_cpp.llama_chat_format import Qwen25VLChatHandler
         handler = Qwen25VLChatHandler(clip_model_path=clip_model_path)

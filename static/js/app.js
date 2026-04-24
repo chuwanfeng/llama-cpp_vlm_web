@@ -7,7 +7,7 @@ let backendType = 'none';  // 'llama-cpp', 'ollama'
 async function init() {
   await detectBackend();
   await loadT();
-  
+
   // 根据后端类型初始化模型列表
   if (backendType === 'llama-cpp') {
     await loadLlamaModels();
@@ -15,7 +15,7 @@ async function init() {
     await loadOllamaModels();
     setInterval(loadOllamaModels, 30000);
   }
-  
+
   // 更新 UI 状态
   updateBackendStatus();
 }
@@ -24,18 +24,31 @@ async function detectBackend() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    backendType = data.backend;
+    backendType = data.current_backend || data.backend || 'none';
     console.log('[init] 后端:', backendType, data);
-    
+
+    // 更新后端选择器
+    const bkSel = document.getElementById('bk-sel');
+    if (bkSel) {
+      const avail = data.available_backends || [];
+      bkSel.querySelectorAll('option').forEach(opt => {
+        opt.disabled = !avail.includes(opt.value);
+        opt.hidden = opt.disabled;
+      });
+      bkSel.value = backendType;
+    }
+
     // 更新侧边栏状态显示
     const dot = document.getElementById('st-dot');
     const txt = document.getElementById('st-txt');
+    const lc = data.llama_cpp || {};
+    const ol = data.ollama || {};
     if (backendType === 'llama-cpp') {
       dot.classList.add('on');
-      txt.textContent = data.gpu_available ? 'llama-cpp (GPU)' : 'llama-cpp (CPU)';
+      txt.textContent = lc.gpu_available ? 'llama-cpp (GPU)' : 'llama-cpp (CPU)';
     } else if (backendType === 'ollama') {
       dot.classList.add('on');
-      txt.textContent = data.running ? 'Ollama 运行中' : 'Ollama 未连接';
+      txt.textContent = ol.available ? 'Ollama 运行中' : 'Ollama 未连接';
     } else {
       dot.classList.remove('on');
       txt.textContent = '无可用后端';
@@ -49,11 +62,45 @@ async function detectBackend() {
 function updateBackendStatus() {
   const badge = document.getElementById('cur-m');
   if (backendType === 'llama-cpp') {
-    // 可以显示 GPU/CPU 信息
     fetch('/api/status').then(r=>r.json()).then(data => {
-      if (data.cpu_mode) badge.title = 'CPU 模式';
-      else if (data.gpu_available) badge.title = 'GPU 模式';
+      const lc = data.llama_cpp || {};
+      if (lc.cpu_mode) badge.title = 'CPU 模式';
+      else if (lc.gpu_available) badge.title = 'GPU 模式';
     }).catch(()=>{});
+  }
+}
+
+async function switchBackend(target) {
+  try {
+    const res = await fetch('/api/switch_backend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backend: target })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      backendType = data.backend;
+      curM = null;
+      models = [];
+      const sel = document.getElementById('m-sel');
+      sel.innerHTML = '<option value="">选择模型...</option>';
+      document.getElementById('cur-m').textContent = '未选择';
+      if (backendType === 'llama-cpp') {
+        await loadLlamaModels();
+      } else {
+        await loadOllamaModels();
+      }
+      const dot = document.getElementById('st-dot');
+      const txt = document.getElementById('st-txt');
+      dot.classList.add('on');
+      txt.textContent = backendType === 'llama-cpp' ? 'llama-cpp' : 'Ollama';
+    } else {
+      alert(data.error || '切换失败');
+      document.getElementById('bk-sel').value = backendType;
+    }
+  } catch (e) {
+    alert('切换失败: ' + e.message);
+    document.getElementById('bk-sel').value = backendType;
   }
 }
 
@@ -73,7 +120,7 @@ async function loadLlamaModels() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Ollama 模型管理（原有）
+// Ollama 模型管理(原有)
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadOllamaModels() {
   try {
@@ -98,7 +145,7 @@ async function loadOllamaModels() {
 
 function renderModelSelect() {
   const sel = document.getElementById('m-sel');
-  sel.innerHTML = '<option value="">选择模型...</option>' + 
+  sel.innerHTML = '<option value="">选择模型...</option>' +
     models.map(m => {
       const path = m.path || m;
       const vision = m.has_vision ? ' 👁' : '';
@@ -115,7 +162,7 @@ function selModel(n) {
   document.getElementById('m-sel').value = modelPath;
   const visionTag = (modelObj && modelObj.has_vision) ? ' 👁' : '';
   document.getElementById('cur-m').textContent = modelPath || '未选择';
-  
+
   // llama-cpp 需要主动加载模型
   if (backendType === 'llama-cpp' && modelPath) {
     loadLlamaModel(modelPath, modelObj);
@@ -126,13 +173,13 @@ async function loadLlamaModel(modelName, modelObj) {
   const btn = document.getElementById('cur-m');
   const originalText = btn.textContent;
   btn.textContent = '加载中...';
-  
+
   try {
     const body = {
       model: modelName,
       chat_handler: 'auto'  // 自动检测 mmproj
     };
-    
+
     const res = await fetch('/api/llama/load_model', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -156,7 +203,7 @@ async function loadLlamaModel(modelName, modelObj) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// 对话发送（统一后端）
+// 对话发送(统一后端)
 // ──────────────────────────────────────────────────────────────────────────────
 async function send() {
   const inp = document.getElementById('inp');
@@ -184,7 +231,7 @@ async function send() {
 
   // 添加用户消息到 UI
   addMsg('usr', txt, [...attI, ...attF]);
-  
+
   // 清空输入
   inp.value = '';
   inp.style.height = 'auto';
@@ -201,7 +248,7 @@ async function send() {
     if (backendType === 'llama-cpp') {
       await sendLlama(content, systemPrompt, savedImages, assistantMsg);
     } else if (backendType === 'ollama') {
-      await sendOllama(content, systemPrompt, assistantMsg);
+      await sendOllama(content, systemPrompt, savedImages, assistantMsg);
     } else {
       throw new Error('无可用后端');
     }
@@ -245,11 +292,11 @@ async function sendLlama(content, systemPrompt, images, msgEl) {
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-    
+
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop();
-    
+
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
       try {
@@ -266,16 +313,28 @@ async function sendLlama(content, systemPrompt, images, msgEl) {
       }
     }
   }
-  
+
   if (!fullText) ctElement.textContent = '(空响应)';
 }
 
-async function sendOllama(content, systemPrompt, msgEl) {
+async function sendOllama(content, systemPrompt, images, msgEl) {
   const messages = [];
   if (systemPrompt) {
     messages.push({ role: 'system', content: systemPrompt });
   }
-  messages.push({ role: 'user', content: content });
+  // 构造用户消息（支持多模态）
+  // Ollama API 格式: content 是字符串, images 是独立字段 (纯 base64 数组)
+  // 注意: 云端 remote model 不支持 content 数组格式, 必须用 images 字段
+  if (images && images.length) {
+    const imgs = images.map(img => {
+      // Ollama images 字段需要纯 base64，不能有 data URI 前缀
+      const uri = img.base64;
+      return uri.includes(',') ? uri.split(',')[1] : uri;
+    });
+    messages.push({ role: 'user', content: content || 'Describe this image.', images: imgs });
+  } else {
+    messages.push({ role: 'user', content: content });
+  }
 
   const body = {
     model: curM,
@@ -311,6 +370,7 @@ async function sendOllama(content, systemPrompt, msgEl) {
       if (!line.startsWith('data: ')) continue;
       try {
         const data = JSON.parse(line.slice(6));
+        console.log('[Ollama chunk]', JSON.stringify(data));
         if (data.message?.content) {
           full += data.message.content;
           msgEl.querySelector('.ct').textContent = full;
@@ -318,7 +378,9 @@ async function sendOllama(content, systemPrompt, msgEl) {
         if (data.error) {
           throw new Error(data.error);
         }
-      } catch {}
+      } catch (e) {
+        if (e.message && !e.message.startsWith('[')) throw e;
+      }
     }
   }
   if (!full) msgEl.querySelector('.ct').textContent = '(空响应)';
@@ -330,21 +392,21 @@ async function sendOllama(content, systemPrompt, msgEl) {
 async function webSearch() {
   const query = prompt('请输入搜索关键词:');
   if (!query) return;
-  
+
   const searchBtn = document.querySelector('.sbtn');
   const originalText = searchBtn.textContent;
   searchBtn.textContent = '🔍';
   searchBtn.disabled = true;
-  
+
   try {
     const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     const data = await res.json();
-    
+
     if (!res.ok) {
       alert('搜索失败: ' + (data.error || '未知错误'));
       return;
     }
-    
+
     // 显示搜索结果
     showSearchResults(data);
   } catch (e) {
@@ -359,12 +421,12 @@ function showSearchResults(data) {
   const resultsDiv = document.createElement('div');
   resultsDiv.className = 'search-results';
   resultsDiv.style.cssText = 'background:var(--input);border-radius:12px;padding:12px;margin:8px 0;max-height:300px;overflow-y:auto';
-  
+
   let html = `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
     <strong>🔍 搜索结果: ${esc(data.query)}</strong>
     <button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
   </div>`;
-  
+
   if (data.results.length === 0) {
     html += '<p>没有找到结果</p>';
   } else {
@@ -379,14 +441,14 @@ function showSearchResults(data) {
       `;
     }
   }
-  
+
   resultsDiv.innerHTML = html;
-  
+
   // 找到消息区域并插入
   const msgsDiv = document.getElementById('msgs');
   msgsDiv.appendChild(resultsDiv);
   msgsDiv.scrollTop = msgsDiv.scrollHeight;
-  
+
   // 绑定插入按钮事件
   resultsDiv.querySelectorAll('.use-search').forEach(btn => {
     btn.onclick = () => {
@@ -402,7 +464,7 @@ function showSearchResults(data) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// UI 辅助函数（保留原有）
+// UI 辅助函数(保留原有)
 // ──────────────────────────────────────────────────────────────────────────────
 function addMsg(role, txt, att = []) {
   const c = document.getElementById('msgs');
@@ -502,7 +564,7 @@ function rmA(i) {
   });
 })();
 
-// 模板（保留原有）
+// 模板(保留原有)
 async function loadT() {
   const r = await fetch('/api/prompt_templates').then(r => r.json()).catch(() => ({}));
   tpls = r.templates || [];
@@ -569,13 +631,13 @@ async function svTpl() {
 }
 
 async function dlTpl() {
-  if (!curTpl || !confirm('删除此模板？')) return;
+  if (!curTpl || !confirm('删除此模板?')) return;
   await fetch('/api/prompt_templates/' + encodeURIComponent(curTpl), { method: 'DELETE' });
   curTpl = null;
   await loadT();
 }
 
-// 翻译（保留原有）
+// 翻译(保留原有)
 async function doTr() {
   const txt = document.getElementById('st').value.trim();
   if (!txt) return;
@@ -586,7 +648,7 @@ async function doTr() {
   const prompt = `你是专业的${names[sl]}到${names[tl]}翻译专家。只输出翻译结果。\n\n${txt}`;
   const out = document.getElementById('to');
   out.value = '';
-  
+
   if (backendType === 'llama-cpp') {
     const res = await fetch('/api/llama/infer', {
       method: 'POST',

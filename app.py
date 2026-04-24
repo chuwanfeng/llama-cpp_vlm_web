@@ -90,63 +90,63 @@ def index():
 @app.route("/api/health")
 def api_health():
     """健康检查 — 前端轮询用"""
-    if USE_LLAMA:
-        return jsonify({
-            "status": "ok",
-            "backend": "llama-cpp",
-            "gpu_available": HAVE_GPU,
-            "cpu_mode": _cpu_mode,
-            "model_loaded": llama_is_loaded()
-        })
-    elif USE_OLLAMA:
-        ollama_check()
-        return jsonify({
-            "status": "ok" if ollama_available else "degraded",
-            "backend": "ollama",
-            "running": ollama_available
-        })
-    else:
+    ollama_check()
+    available = []
+    if LLAMA_AVAILABLE:
+        available.append("llama-cpp")
+    if ollama_available:
+        available.append("ollama")
+    if not available:
         return jsonify({"status": "degraded", "backend": "none"}), 503
+    return jsonify({
+        "status": "ok",
+        "current_backend": _current_backend,
+        "available_backends": available,
+    })
 
 
 @app.route("/api/status")
 def api_status():
-    if USE_LLAMA:
-        return jsonify({
-            "backend": "llama-cpp",
+    ollama_check()
+    available = []
+    if LLAMA_AVAILABLE:
+        available.append("llama-cpp")
+    if ollama_available:
+        available.append("ollama")
+    return jsonify({
+        "current_backend": _current_backend,
+        "available_backends": available,
+        "llama_cpp": {
+            "available": LLAMA_AVAILABLE,
             "gpu_available": HAVE_GPU,
             "cpu_mode": _cpu_mode,
-            "model_loaded": llama_is_loaded(),
-            "config": llama_get_config() or None,
-        })
-    elif USE_OLLAMA:
-        ollama_check()
-        return jsonify({
-            "backend": "ollama",
-            "running": ollama_available
-        })
-    else:
-        return jsonify({"backend": "none", "available": False}), 503
+            "model_loaded": llama_is_loaded() if LLAMA_AVAILABLE else False,
+            "config": (llama_get_config() or None) if LLAMA_AVAILABLE else None,
+        },
+        "ollama": {
+            "available": ollama_available,
+        },
+    })
 
 
 @app.route("/api/switch_backend", methods=["POST"])
 def api_switch_backend():
-    """切换后端（预留，后续实现）"""
-    global _current_backend, USE_LLAMA, USE_OLLAMA, BACKEND
+    """切换后端"""
+    global _current_backend
     data = request.json or {}
     target = data.get("backend")
     if target == "llama-cpp" and LLAMA_AVAILABLE:
-        USE_LLAMA = True
-        USE_OLLAMA = False
-        BACKEND = "llama-cpp"
+        _current_backend = "llama-cpp"
+        log.info("切换后端: llama-cpp")
         return jsonify({"status": "switched", "backend": "llama-cpp"})
-    elif target == "ollama" and ollama_available:
-        USE_LLAMA = False
-        USE_OLLAMA = True
-        BACKEND = "ollama"
-        return jsonify({"status": "switched", "backend": "ollama"})
-    else:
-        return _err(f"后端不可用: {target}", 400)
+    elif target == "ollama":
+        ollama_check()  # 重新检测
+        if ollama_available:
+            _current_backend = "ollama"
+            log.info("切换后端: Ollama")
+            return jsonify({"status": "switched", "backend": "ollama"})
+        return _err("Ollama 未运行", 400)
+    return _err(f"后端不可用: {target}", 400)
 
 
 @app.route("/api/upload_image", methods=["POST"])
@@ -206,7 +206,7 @@ def api_enhance():
     try:
         tpl = apply_template(template_id, user_input)
         # 使用当前后端进行增强
-        if USE_LLAMA:
+        if _current_backend == "llama-cpp" and LLAMA_AVAILABLE:
             output = llama_infer(prompt=tpl["user"], system=tpl["system"], stream=False)
         else:
             output = enhance_prompt(system=tpl["system"], user=tpl["user"])
@@ -223,7 +223,7 @@ def api_enhance():
 # ═══════════════════════════════════════════════════════════════════════════════
 # llama-cpp 后端路由（GPU + CPU）
 # ═══════════════════════════════════════════════════════════════════════════════
-if USE_LLAMA:
+if True:  # llama-cpp routes (always registered, runtime check per-handler)
     @app.route("/api/llama/status")
     def api_llama_status():
         return jsonify({
@@ -323,7 +323,7 @@ if USE_LLAMA:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Ollama 后端路由（当 llama-cpp 不可用时）
 # ═══════════════════════════════════════════════════════════════════════════════
-elif USE_OLLAMA:
+if True:  # Ollama routes (always registered, runtime check per-handler)
     @app.route("/api/ollama_status")
     def api_ollama_status():
         ollama_check()
@@ -344,56 +344,6 @@ elif USE_OLLAMA:
         ollama_pull(name)
         return jsonify({"status": "started", "model": name})
 
-    # ─── 提示词模板 CRUD ────────────────────────────────────────────────────
-    @app.route("/api/prompt_templates", methods=["GET"])
-    def api_templates_list():
-        return jsonify({"templates": list_templates()})
-
-    @app.route("/api/prompt_templates/<tid>", methods=["GET"])
-    def api_templates_get(tid):
-        tpl = get_template(tid)
-        if not tpl:
-            return _err("模板不存在", 404)
-        return jsonify({"template": tpl, "id": tid})
-
-    @app.route("/api/prompt_templates", methods=["POST"])
-    def api_templates_save():
-        data = request.json or {}
-        tid = data.get("id", "").strip()
-        if not tid:
-            return _err("缺少模板 ID")
-        save_template(tid, data)
-        return jsonify({"status": "ok", "id": tid})
-
-    @app.route("/api/prompt_templates/<tid>", methods=["DELETE"])
-    def api_templates_delete(tid):
-        ok = delete_template(tid)
-        if not ok:
-            return _err("内置模板不可删除", 403)
-        return jsonify({"status": "ok", "id": tid})
-
-    @app.route("/api/enhance", methods=["POST"])
-    def api_enhance():
-        data = request.json or {}
-        user_input = data.get("prompt", "").strip()
-        template_id = data.get("template", "")
-        if not user_input:
-            return _err("prompt 为空")
-        if not template_id:
-            return _err("缺少 template 参数")
-        try:
-            tpl = apply_template(template_id, user_input)
-            output = enhance_prompt(system=tpl["system"], user=tpl["user"])
-            return jsonify({
-                "original": user_input,
-                "template_id": template_id,
-                "output": output,
-            })
-        except Exception as e:
-            log.error("增强失败: %s", e)
-            return _err(str(e), 500)
-
-    # 保留 /api/chat 端点兼容性
     @app.route("/api/chat", methods=["POST"])
     def api_chat():
         ollama_check()

@@ -15,6 +15,13 @@
       <button class="col-btn" onclick="toggleSB()" title="收起">◀</button>
     </div>
     <div class="sb-sec">
+      <h3>后端</h3>
+      <select class="m-sel" id="bk-sel" onchange="switchBackend(this.value)">
+        <option value="llama-cpp">llama-cpp</option>
+        <option value="ollama">Ollama</option>
+      </select>
+    </div>
+    <div class="sb-sec">
       <h3>模型</h3>
       <select class="m-sel" id="m-sel" onchange="selModel(this.value)">
         <option value="">选择模型...</option>
