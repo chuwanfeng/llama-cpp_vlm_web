@@ -16,7 +16,7 @@ OLLAMA_STREAM_TIMEOUT = 300  # 秒
 
 # ─── GPU (llama-cpp-python) ──────────────────────────────────────────────────
 GPU_DEFAULT_CTX = 8192
-GPU_DEFAULT_LAYERS = -1  # -1 = 全部
+GPU_DEFAULT_LAYERS = 0  # -1 = 全部
 GPU_DEFAULT_MAX_TOKENS = 4096
 
 # ─── 推理参数默认值 ──────────────────────────────────────────────────────────
