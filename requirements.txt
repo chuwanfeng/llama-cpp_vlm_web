@@ -1,0 +1,13 @@
+# ── Web 服务（两个后端共用）───────────────────────────
+flask>=3.0.0
+flask-cors>=4.0.0
+requests>=2.31.0
+pillow>=10.0.0
+
+# ── GPU 模式需要（llama-cpp-python + ComfyUI 兼容）──
+# GPU 机器上 pip install 这些，然后启动 python app.py
+# CPU 机器只需要上面的 Web 依赖，用 Ollama 后端
+# torch>=2.0.0          # CUDA 版本，见 https://pytorch.org
+# llama-cpp-python>=0.3.0  # Windows CUDA wheel: pip install llama-cpp-python --index-url https://jamepeng.github.io/whl/cu121
+# numpy>=1.26.0
+# scipy>=1.11.0
