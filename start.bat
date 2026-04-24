@@ -1,7 +1,9 @@
 @echo off
-:: Llama-cpp VLM Web 启动脚本
-:: 用法: start.bat [port]
-:: 默认端口 5555
+echo ========================
+echo  Llama-cpp VLM Web
+echo  USE: start.bat [port]
+echo  PORT: 5555
+echo ========================
 
 set PORT=%1
 if "%PORT%"=="" set PORT=5555
@@ -11,3 +13,5 @@ echo Open http://localhost:%PORT% in your browser
 echo.
 
 python app.py %PORT%
+
+pause

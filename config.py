@@ -6,7 +6,7 @@ import os
 # ─── 基础路径 ────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # MODELS_DIR = os.environ.get("MODELS_DIR", os.path.join(BASE_DIR, "models"))
-MODELS_DIR = f"D:\Scoop\LLM"
+MODELS_DIR = r"D:\Scoop\LLM"
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 # ─── Ollama ──────────────────────────────────────────────────────────────────
@@ -28,4 +28,4 @@ DEFAULT_REPEAT_PENALTY = 1.0
 # ─── Web 服务 ────────────────────────────────────────────────────────────────
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 5000))
-DEBUG = True
+DEBUG = False
