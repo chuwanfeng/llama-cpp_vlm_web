@@ -277,7 +277,7 @@ async function sendLlama(content, systemPrompt, images, msgEl) {
     }
   }
   if (!fullText) bubble.innerHTML = '(空响应)';
-  else extractThink(msgEl);
+  else renderFinal(msgEl, fullText);
 }
 
 async function sendOllama(content, systemPrompt, images, msgEl) {
@@ -338,7 +338,7 @@ async function sendOllama(content, systemPrompt, images, msgEl) {
     }
   }
   if (!full) bubble.innerHTML = '(空响应)';
-  else extractThink(msgEl);
+  else renderFinal(msgEl, full);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -369,50 +369,46 @@ function renderMarkdown(text) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Think 提取与折叠
 // ──────────────────────────────────────────────────────────────────────────────
-function extractThink(msgEl) {
+function renderFinal(msgEl, rawText) {
   const bubble = msgEl.querySelector('.msg-bubble');
   if (!bubble) return;
-
-  // Get raw text content (not HTML) to avoid escaping issues
-  const rawText = bubble.innerText;
 
   // Case 1: <think>...</think> wrapped tags
   const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
   if (fullMatch) {
     const thinkText = fullMatch[1];
     const replyText = rawText.replace(/<think>[\s\S]*?<\/think>/, '');
-    const thinkHtml = renderMarkdown(thinkText);
-    const replyHtml = renderMarkdown(replyText);
     bubble.innerHTML = `
       <div class="think-block">
         <div class="think-hd" onclick="toggleThink(this)">
           <span>💭 思考过程</span>
         </div>
-        <div class="think-ct">${thinkHtml}</div>
+        <div class="think-ct">${renderMarkdown(thinkText)}</div>
       </div>
-      <div class="reply-content">${replyHtml}</div>
+      <div class="reply-content">${renderMarkdown(replyText)}</div>
     `;
     return;
   }
 
-  // Case 2: kimi-k2.6 style — content...</think>reply (no opening tag, or opening tag got eaten by streaming)
+  // Case 2: kimi-k2.6 style — content...</think>reply
   const endMatch = rawText.match(/([\s\S]*?)<\/think>([\s\S]*)/);
   if (endMatch) {
     const thinkText = endMatch[1];
     const replyText = endMatch[2];
-    const thinkHtml = renderMarkdown(thinkText);
-    const replyHtml = renderMarkdown(replyText);
     bubble.innerHTML = `
       <div class="think-block">
         <div class="think-hd" onclick="toggleThink(this)">
           <span>💭 思考过程</span>
         </div>
-        <div class="think-ct">${thinkHtml}</div>
+        <div class="think-ct">${renderMarkdown(thinkText)}</div>
       </div>
-      <div class="reply-content">${replyHtml}</div>
+      <div class="reply-content">${renderMarkdown(replyText)}</div>
     `;
     return;
   }
+
+  // No think tags — just render markdown normally
+  bubble.innerHTML = renderMarkdown(rawText);
 }
 
 function toggleThink(hd) {
