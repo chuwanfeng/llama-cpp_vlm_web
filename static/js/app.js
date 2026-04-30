@@ -1,5 +1,5 @@
-let curM=null, models=[], tpls=[], curTpl=null, attF=[], attI=[];
-let backendType = 'none';  // 'llama-cpp', 'ollama'
+let curM = null, models = [], tpls = [], curTpl = null, attF = [], attI = [];
+let backendType = 'none';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 初始化
@@ -7,16 +7,12 @@ let backendType = 'none';  // 'llama-cpp', 'ollama'
 async function init() {
   await detectBackend();
   await loadT();
-
-  // 根据后端类型初始化模型列表
   if (backendType === 'llama-cpp') {
     await loadLlamaModels();
   } else if (backendType === 'ollama') {
     await loadOllamaModels();
     setInterval(loadOllamaModels, 30000);
   }
-
-  // 更新 UI 状态
   updateBackendStatus();
 }
 
@@ -25,9 +21,6 @@ async function detectBackend() {
     const res = await fetch('/api/status');
     const data = await res.json();
     backendType = data.current_backend || data.backend || 'none';
-    console.log('[init] 后端:', backendType, data);
-
-    // 更新后端选择器
     const bkSel = document.getElementById('bk-sel');
     if (bkSel) {
       const avail = data.available_backends || [];
@@ -37,8 +30,6 @@ async function detectBackend() {
       });
       bkSel.value = backendType;
     }
-
-    // 更新侧边栏状态显示
     const dot = document.getElementById('st-dot');
     const txt = document.getElementById('st-txt');
     const lc = data.llama_cpp || {};
@@ -62,11 +53,11 @@ async function detectBackend() {
 function updateBackendStatus() {
   const badge = document.getElementById('cur-m');
   if (backendType === 'llama-cpp') {
-    fetch('/api/status').then(r=>r.json()).then(data => {
+    fetch('/api/status').then(r => r.json()).then(data => {
       const lc = data.llama_cpp || {};
       if (lc.cpu_mode) badge.title = 'CPU 模式';
       else if (lc.gpu_available) badge.title = 'GPU 模式';
-    }).catch(()=>{});
+    }).catch(() => { });
   }
 }
 
@@ -105,7 +96,7 @@ async function switchBackend(target) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// llama-cpp 模型管理
+// 模型管理
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadLlamaModels() {
   try {
@@ -119,9 +110,6 @@ async function loadLlamaModels() {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Ollama 模型管理(原有)
-// ──────────────────────────────────────────────────────────────────────────────
 async function loadOllamaModels() {
   try {
     const res = await fetch('/api/ollama_status');
@@ -155,15 +143,11 @@ function renderModelSelect() {
 }
 
 function selModel(n) {
-  // n 可能是 {path, mmproj, has_vision} 对象或纯字符串
   const modelPath = (typeof n === 'object') ? n.path : n;
   const modelObj = (typeof n === 'object') ? n : models.find(m => (m.path || m) === n);
   curM = modelPath;
   document.getElementById('m-sel').value = modelPath;
-  const visionTag = (modelObj && modelObj.has_vision) ? ' 👁' : '';
   document.getElementById('cur-m').textContent = modelPath || '未选择';
-
-  // llama-cpp 需要主动加载模型
   if (backendType === 'llama-cpp' && modelPath) {
     loadLlamaModel(modelPath, modelObj);
   }
@@ -173,13 +157,8 @@ async function loadLlamaModel(modelName, modelObj) {
   const btn = document.getElementById('cur-m');
   const originalText = btn.textContent;
   btn.textContent = '加载中...';
-
   try {
-    const body = {
-      model: modelName,
-      chat_handler: 'auto'  // 自动检测 mmproj
-    };
-
+    const body = { model: modelName, chat_handler: 'auto' };
     const res = await fetch('/api/llama/load_model', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -187,35 +166,28 @@ async function loadLlamaModel(modelName, modelObj) {
     });
     const data = await res.json();
     if (res.ok) {
-      console.log('模型加载成功:', data);
       const mmprojInfo = data.config?.mmproj_loaded ? ' (视觉已启用)' : '';
       btn.textContent = modelName + mmprojInfo;
     } else {
-      console.error('模型加载失败:', data.error);
       btn.textContent = originalText;
       alert('加载失败: ' + (data.error || '未知错误'));
     }
   } catch (e) {
-    console.error('加载模型请求失败:', e);
     btn.textContent = originalText;
     alert('加载失败: ' + e.message);
   }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// 对话发送(统一后端)
+// 对话发送
 // ──────────────────────────────────────────────────────────────────────────────
 async function send() {
   const inp = document.getElementById('inp');
   const txt = inp.value.trim();
   if (!txt && !attF.length && !attI.length) return;
-  if (!curM) {
-    alert('请先选择模型');
-    return;
-  }
+  if (!curM) { alert('请先选择模型'); return; }
   document.getElementById('empty')?.classList.add('hid');
 
-  // 构造消息内容
   let content = txt;
   if (attF.length) {
     const filesText = attF.map(f => `--- 文件: ${f.name} ---\n${f.content}`).join('\n\n');
@@ -229,10 +201,7 @@ async function send() {
     if (t && t.system) systemPrompt = t.system;
   }
 
-  // 添加用户消息到 UI
   addMsg('usr', txt, [...attI, ...attF]);
-
-  // 清空输入
   inp.value = '';
   inp.style.height = 'auto';
   const savedImages = [...attI];
@@ -267,67 +236,55 @@ async function sendLlama(content, systemPrompt, images, msgEl) {
     top_k: 40,
     repeat_penalty: 1.0,
     images: images.map(img => img.base64),
-    stream: true  // 启用流式输出
+    stream: true
   };
-
   const res = await fetch('/api/llama/infer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`HTTP ${res.status}: ${err.slice(0, 200)}`);
   }
-
-  // 处理流式响应
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let fullText = '';
   const ctElement = msgEl.querySelector('.ct');
-  ctElement.textContent = '';
+  ctElement.innerHTML = '<div class="msg-bubble"></div>';
+  const bubble = ctElement.querySelector('.msg-bubble');
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
-
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop();
-
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
       try {
         const data = JSON.parse(line.slice(6));
         if (data.content) {
           fullText += data.content;
-          ctElement.textContent = fullText;
+          bubble.innerHTML = renderMarkdown(fullText);
+          msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
-        if (data.error) {
-          throw new Error(data.error);
-        }
+        if (data.error) throw new Error(data.error);
       } catch (e) {
         if (e.message) throw e;
       }
     }
   }
-
-  if (!fullText) ctElement.textContent = '(空响应)';
+  if (!fullText) bubble.innerHTML = '(空响应)';
+  else extractThink(msgEl);
 }
 
 async function sendOllama(content, systemPrompt, images, msgEl) {
   const messages = [];
-  if (systemPrompt) {
-    messages.push({ role: 'system', content: systemPrompt });
-  }
-  // 构造用户消息（支持多模态）
-  // Ollama API 格式: content 是字符串, images 是独立字段 (纯 base64 数组)
-  // 注意: 云端 remote model 不支持 content 数组格式, 必须用 images 字段
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   if (images && images.length) {
     const imgs = images.map(img => {
-      // Ollama images 字段需要纯 base64，不能有 data URI 前缀
       const uri = img.base64;
       return uri.includes(',') ? uri.split(',')[1] : uri;
     });
@@ -335,7 +292,6 @@ async function sendOllama(content, systemPrompt, images, msgEl) {
   } else {
     messages.push({ role: 'user', content: content });
   }
-
   const body = {
     model: curM,
     messages: messages,
@@ -343,22 +299,22 @@ async function sendOllama(content, systemPrompt, images, msgEl) {
     temperature: parseFloat(document.getElementById('s-temp').value),
     top_p: parseFloat(document.getElementById('s-topp').value),
   };
-
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`HTTP ${res.status}: ${err.slice(0, 200)}`);
   }
-
   let full = '';
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const ctElement = msgEl.querySelector('.ct');
+  ctElement.innerHTML = '<div class="msg-bubble"></div>';
+  const bubble = ctElement.querySelector('.msg-bubble');
 
   while (true) {
     const { value, done } = await reader.read();
@@ -370,44 +326,231 @@ async function sendOllama(content, systemPrompt, images, msgEl) {
       if (!line.startsWith('data: ')) continue;
       try {
         const data = JSON.parse(line.slice(6));
-        console.log('[Ollama chunk]', JSON.stringify(data));
         if (data.message?.content) {
           full += data.message.content;
-          msgEl.querySelector('.ct').textContent = full;
+          bubble.innerHTML = renderMarkdown(full);
+          msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
-        if (data.error) {
-          throw new Error(data.error);
-        }
+        if (data.error) throw new Error(data.error);
       } catch (e) {
         if (e.message && !e.message.startsWith('[')) throw e;
       }
     }
   }
-  if (!full) msgEl.querySelector('.ct').textContent = '(空响应)';
+  if (!full) bubble.innerHTML = '(空响应)';
+  else extractThink(msgEl);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Web 搜索功能
+// Markdown 渲染
+// ──────────────────────────────────────────────────────────────────────────────
+function renderMarkdown(text) {
+  let html = esc(text);
+  // Code blocks
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    return `<div class="code-block"><div class="code-hd"><span>${lang || 'code'}</span><button class="code-copy" onclick="copyCode(this)">复制</button></div><pre><code>${esc(code.trim())}</code></pre></div>`;
+  });
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--accent);text-decoration:none">$1</a>');
+  // Lists
+  html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul style="margin:8px 0;padding-left:20px">$&</ul>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Think 提取与折叠
+// ──────────────────────────────────────────────────────────────────────────────
+function extractThink(msgEl) {
+  const bubble = msgEl.querySelector('.msg-bubble');
+  if (!bubble) return;
+
+  // Get raw text content (not HTML) to avoid escaping issues
+  const rawText = bubble.innerText;
+
+  // Case 1: <think>...</think> wrapped tags
+  const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
+  if (fullMatch) {
+    const thinkText = fullMatch[1];
+    const replyText = rawText.replace(/<think>[\s\S]*?<\/think>/, '');
+    const thinkHtml = renderMarkdown(thinkText);
+    const replyHtml = renderMarkdown(replyText);
+    bubble.innerHTML = `
+      <div class="think-block">
+        <div class="think-hd" onclick="toggleThink(this)">
+          <span>💭 思考过程</span>
+        </div>
+        <div class="think-ct">${thinkHtml}</div>
+      </div>
+      <div class="reply-content">${replyHtml}</div>
+    `;
+    return;
+  }
+
+  // Case 2: kimi-k2.6 style — content...</think>reply (no opening tag, or opening tag got eaten by streaming)
+  const endMatch = rawText.match(/([\s\S]*?)<\/think>([\s\S]*)/);
+  if (endMatch) {
+    const thinkText = endMatch[1];
+    const replyText = endMatch[2];
+    const thinkHtml = renderMarkdown(thinkText);
+    const replyHtml = renderMarkdown(replyText);
+    bubble.innerHTML = `
+      <div class="think-block">
+        <div class="think-hd" onclick="toggleThink(this)">
+          <span>💭 思考过程</span>
+        </div>
+        <div class="think-ct">${thinkHtml}</div>
+      </div>
+      <div class="reply-content">${replyHtml}</div>
+    `;
+    return;
+  }
+}
+
+function toggleThink(hd) {
+  hd.classList.toggle('open');
+  const ct = hd.nextElementSibling;
+  ct.classList.toggle('open');
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 消息操作
+// ──────────────────────────────────────────────────────────────────────────────
+function copyMsg(btn) {
+  const msgEl = btn.closest('.msg');
+  const bubble = msgEl.querySelector('.msg-bubble');
+  let text = '';
+  // Get think content if exists
+  const thinkCt = bubble.querySelector('.think-ct');
+  if (thinkCt && thinkCt.classList.contains('open')) {
+    text += thinkCt.textContent + '\n\n';
+  }
+  // Get reply content
+  const reply = bubble.querySelector('.reply-content');
+  if (reply) {
+    text += reply.innerText;
+  } else {
+    text += bubble.innerText;
+  }
+  navigator.clipboard.writeText(text.trim()).then(() => {
+    const original = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(() => btn.textContent = original, 1500);
+  });
+}
+
+function editMsg(btn) {
+  const msgEl = btn.closest('.msg');
+  const bubble = msgEl.querySelector('.msg-bubble');
+  const text = bubble.innerText;
+  const inp = document.getElementById('inp');
+  inp.value = text;
+  inp.focus();
+  ar(inp);
+  // Remove this message and all after it
+  let remove = false;
+  document.querySelectorAll('.msg').forEach(m => {
+    if (remove) m.remove();
+    if (m === msgEl) {
+      remove = true;
+      m.remove();
+    }
+  });
+}
+
+function deleteMsg(btn) {
+  const msgEl = btn.closest('.msg');
+  if (confirm('删除这条消息?')) {
+    msgEl.remove();
+  }
+}
+
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code');
+  navigator.clipboard.writeText(code.textContent).then(() => {
+    btn.textContent = '已复制';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = '复制';
+      btn.classList.remove('copied');
+    }, 1500);
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 消息添加
+// ──────────────────────────────────────────────────────────────────────────────
+function addMsg(role, txt, att = []) {
+  const c = document.getElementById('msgs');
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'usr' ? 'usr' : 'ast');
+
+  // Content container
+  const ct = document.createElement('div');
+  ct.className = 'ct';
+
+  // Bubble
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+
+  let h = '';
+  if (att.length) {
+    const imgs = att.filter(a => a.type === 'image');
+    const files = att.filter(a => a.type === 'file');
+    h += imgs.map(a => `<img src="${esc(a.preview)}" style="max-width:200px;border-radius:8px;margin:4px;display:block">`).join('');
+    h += files.map(a => `<div style="background:var(--input);padding:4px 8px;border-radius:4px;font-size:12px;margin:4px;color:var(--text2);display:inline-block">📄 ${esc(a.name)}</div>`).join('');
+  }
+  if (txt) {
+    if (role === 'ast') {
+      h += renderMarkdown(txt);
+    } else {
+      h += esc(txt);
+    }
+  }
+  bubble.innerHTML = h || '...';
+  ct.appendChild(bubble);
+
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'msg-actions';
+  actions.innerHTML = `
+    <button class="msg-btn" onclick="copyMsg(this)" title="复制">📋</button>
+    ${role === 'usr' ? '<button class="msg-btn" onclick="editMsg(this)" title="编辑">✏️</button>' : ''}
+    <button class="msg-btn" onclick="deleteMsg(this)" title="删除">🗑️</button>
+  `;
+  ct.appendChild(actions);
+
+  d.appendChild(ct);
+  c.appendChild(d);
+  c.scrollTop = c.scrollHeight;
+  return d;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Web 搜索
 // ──────────────────────────────────────────────────────────────────────────────
 async function webSearch() {
   const query = prompt('请输入搜索关键词:');
   if (!query) return;
-
   const searchBtn = document.querySelector('.sbtn');
   const originalText = searchBtn.textContent;
   searchBtn.textContent = '🔍';
   searchBtn.disabled = true;
-
   try {
     const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     const data = await res.json();
-
     if (!res.ok) {
       alert('搜索失败: ' + (data.error || '未知错误'));
       return;
     }
-
-    // 显示搜索结果
     showSearchResults(data);
   } catch (e) {
     alert('搜索请求失败: ' + e.message);
@@ -421,12 +564,10 @@ function showSearchResults(data) {
   const resultsDiv = document.createElement('div');
   resultsDiv.className = 'search-results';
   resultsDiv.style.cssText = 'background:var(--input);border-radius:12px;padding:12px;margin:8px 0;max-height:300px;overflow-y:auto';
-
   let html = `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
     <strong>🔍 搜索结果: ${esc(data.query)}</strong>
     <button onclick="this.parentElement.parentElement.remove()" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
   </div>`;
-
   if (data.results.length === 0) {
     html += '<p>没有找到结果</p>';
   } else {
@@ -441,15 +582,10 @@ function showSearchResults(data) {
       `;
     }
   }
-
   resultsDiv.innerHTML = html;
-
-  // 找到消息区域并插入
   const msgsDiv = document.getElementById('msgs');
   msgsDiv.appendChild(resultsDiv);
   msgsDiv.scrollTop = msgsDiv.scrollHeight;
-
-  // 绑定插入按钮事件
   resultsDiv.querySelectorAll('.use-search').forEach(btn => {
     btn.onclick = () => {
       const url = btn.dataset.url;
@@ -464,26 +600,8 @@ function showSearchResults(data) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// UI 辅助函数(保留原有)
+// UI 辅助
 // ──────────────────────────────────────────────────────────────────────────────
-function addMsg(role, txt, att = []) {
-  const c = document.getElementById('msgs');
-  const d = document.createElement('div');
-  d.className = 'msg ' + (role === 'usr' ? 'usr' : 'ast');
-  let h = '';
-  if (att.length) {
-    const imgs = att.filter(a => a.type === 'image');
-    const files = att.filter(a => a.type === 'file');
-    h += imgs.map(a => `<img src="${esc(a.preview)}" style="max-width:200px;border-radius:8px;margin:4px">`).join('');
-    h += files.map(a => `<div style="background:var(--input);padding:4px 8px;border-radius:4px;font-size:12px;margin:4px;color:var(--text2)">📄 ${esc(a.name)}</div>`).join('');
-  }
-  if (txt) h += esc(txt);
-  d.innerHTML = `<div class="ct">${h || '...'}</div>`;
-  c.appendChild(d);
-  c.scrollTop = c.scrollHeight;
-  return d;
-}
-
 function nav(n) {
   document.querySelectorAll('.nav').forEach(e => e.classList.toggle('act', e.dataset.n === n));
   document.querySelectorAll('.panel').forEach(e => e.classList.toggle('act', e.id === 'p-' + n));
@@ -511,7 +629,7 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// 文件上传处理
+// 文件上传
 function hFiles(inp) {
   for (const f of inp.files) {
     const ext = '.' + f.name.split('.').pop().toLowerCase();
@@ -552,7 +670,7 @@ function rmA(i) {
 }
 
 // 拖拽上传
-(function() {
+(function () {
   const z = document.getElementById('dz');
   if (!z) return;
   z.addEventListener('dragover', e => { e.preventDefault(); z.style.borderColor = 'var(--accent)'; });
@@ -564,7 +682,7 @@ function rmA(i) {
   });
 })();
 
-// 模板(保留原有)
+// 模板
 async function loadT() {
   const r = await fetch('/api/prompt_templates').then(r => r.json()).catch(() => ({}));
   tpls = r.templates || [];
@@ -637,7 +755,7 @@ async function dlTpl() {
   await loadT();
 }
 
-// 翻译(保留原有)
+// 翻译
 async function doTr() {
   const txt = document.getElementById('st').value.trim();
   if (!txt) return;
@@ -648,7 +766,6 @@ async function doTr() {
   const prompt = `你是专业的${names[sl]}到${names[tl]}翻译专家。只输出翻译结果。\n\n${txt}`;
   const out = document.getElementById('to');
   out.value = '';
-
   if (backendType === 'llama-cpp') {
     const res = await fetch('/api/llama/infer', {
       method: 'POST',
@@ -680,7 +797,7 @@ async function doTr() {
             full += d.message.content;
             out.value = full;
           }
-        } catch {}
+        } catch { }
       }
     }
   }
