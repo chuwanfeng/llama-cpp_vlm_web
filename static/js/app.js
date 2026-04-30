@@ -376,8 +376,8 @@ function renderFinal(msgEl, rawText) {
   // Case 1: <think>...</think> wrapped tags
   const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
   if (fullMatch) {
-    const thinkText = fullMatch[1];
-    const replyText = rawText.replace(/<think>[\s\S]*?<\/think>/, '');
+    const thinkText = fullMatch[1].trim();
+    const replyText = rawText.replace(/<think>[\s\S]*?<\/think>/, '').trim();
     bubble.innerHTML = `
       <div class="think-block">
         <div class="think-hd" onclick="toggleThink(this)">
@@ -393,8 +393,8 @@ function renderFinal(msgEl, rawText) {
   // Case 2: kimi-k2.6 style — content...</think>reply
   const endMatch = rawText.match(/([\s\S]*?)<\/think>([\s\S]*)/);
   if (endMatch) {
-    const thinkText = endMatch[1];
-    const replyText = endMatch[2];
+    const thinkText = endMatch[1].trim();
+    const replyText = endMatch[2].trim();
     bubble.innerHTML = `
       <div class="think-block">
         <div class="think-hd" onclick="toggleThink(this)">
