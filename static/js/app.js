@@ -348,7 +348,7 @@ function renderMarkdown(text) {
   let html = esc(text);
   // Code blocks
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    return `<div class="code-block"><div class="code-hd"><span>${lang || 'code'}</span><button class="code-copy" onclick="copyCode(this)">复制</button></div><pre><code>${esc(code.trim())}</code></pre></div>`;
+    return `<div class="code-block"><div class="code-hd"><span>${lang || 'code'}</span><button class="code-copy" onclick="copyCode(this)">复制</button></div><pre><code>${esc(code.trim()).replace(/&amp;#40;/g, '(').replace(/&amp;#41;/g, ')')}</code></pre></div>`;
   });
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
