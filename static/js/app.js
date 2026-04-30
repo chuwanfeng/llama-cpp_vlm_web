@@ -420,6 +420,37 @@ function deleteMsg(btn) {
   }
 }
 
+function regenerateMsg(btn) {
+  const msgEl = btn.closest('.msg');
+  // Find the previous user message
+  let prevUserMsg = null;
+  const allMsgs = Array.from(document.querySelectorAll('.msg'));
+  const idx = allMsgs.indexOf(msgEl);
+  for (let i = idx - 1; i >= 0; i--) {
+    if (allMsgs[i].classList.contains('usr')) {
+      prevUserMsg = allMsgs[i];
+      break;
+    }
+  }
+  // Remove this assistant message and all after it
+  let remove = false;
+  allMsgs.forEach(m => {
+    if (remove) m.remove();
+    if (m === msgEl) {
+      remove = true;
+      m.remove();
+    }
+  });
+  // If found previous user message, re-send
+  if (prevUserMsg) {
+    const bubble = prevUserMsg.querySelector('.msg-bubble');
+    const text = bubble.innerText;
+    const inp = document.getElementById('inp');
+    inp.value = text;
+    send();
+  }
+}
+
 function copyCode(btn) {
   const code = btn.closest('.code-block').querySelector('code');
   navigator.clipboard.writeText(code.textContent).then(() => {
@@ -468,11 +499,19 @@ function addMsg(role, txt, att = []) {
   // Actions
   const actions = document.createElement('div');
   actions.className = 'msg-actions';
-  actions.innerHTML = `
-    <button class="msg-btn" onclick="copyMsg(this)" title="复制">📋</button>
-    ${role === 'usr' ? '<button class="msg-btn" onclick="editMsg(this)" title="编辑">✏️</button>' : ''}
-    <button class="msg-btn" onclick="deleteMsg(this)" title="删除">🗑️</button>
-  `;
+  if (role === 'ast') {
+    actions.innerHTML = `
+      <button class="msg-btn" onclick="copyMsg(this)" title="复制">📋</button>
+      <button class="msg-btn" onclick="regenerateMsg(this)" title="重新生成">🔄</button>
+      <button class="msg-btn" onclick="deleteMsg(this)" title="删除">🗑️</button>
+    `;
+  } else {
+    actions.innerHTML = `
+      <button class="msg-btn" onclick="copyMsg(this)" title="复制">📋</button>
+      <button class="msg-btn" onclick="editMsg(this)" title="编辑">✏️</button>
+      <button class="msg-btn" onclick="deleteMsg(this)" title="删除">🗑️</button>
+    `;
+  }
   ct.appendChild(actions);
 
   d.appendChild(ct);
