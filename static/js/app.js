@@ -380,7 +380,7 @@ function renderFinal(msgEl, rawText) {
     const replyText = rawText.replace(/<think>[\s\S]*?<\/think>/, '').trim();
     bubble.innerHTML = `
       <div class="think-block">
-        <div class="think-hd" onclick="toggleThink(this)">
+        <div class="think-hd">
           <span>💭 思考过程</span>
         </div>
         <div class="think-ct">${renderMarkdown(thinkText)}</div>
@@ -397,7 +397,7 @@ function renderFinal(msgEl, rawText) {
     const replyText = endMatch[2].trim();
     bubble.innerHTML = `
       <div class="think-block">
-        <div class="think-hd" onclick="toggleThink(this)">
+        <div class="think-hd">
           <span>💭 思考过程</span>
         </div>
         <div class="think-ct">${renderMarkdown(thinkText)}</div>
@@ -409,12 +409,6 @@ function renderFinal(msgEl, rawText) {
 
   // No think tags — just render markdown normally
   bubble.innerHTML = renderMarkdown(rawText);
-}
-
-function toggleThink(hd) {
-  hd.classList.toggle('open');
-  const ct = hd.nextElementSibling;
-  ct.classList.toggle('open');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

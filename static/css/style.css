@@ -126,16 +126,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .msg-btn:hover{background:var(--sidebar-hover);color:var(--text)}
 .msg-btn:active{transform:scale(.95)}
 
-/* Think block - DeepSeek style */
-.think-block{margin:0;padding:0;border-radius:8px;background:var(--think-bg);border:1px solid var(--think-border);overflow:hidden}
-.think-hd{display:flex;align-items:center;gap:8px;padding:0 14px;margin:0;cursor:pointer;font-size:13px;color:var(--muted);transition:background .15s;user-select:none}
-.think-hd:hover{background:rgba(255,255,255,.03)}
-.think-hd::before{content:"▸";font-size:11px;transition:transform .2s;display:inline-block}
-.think-hd.open::before{transform:rotate(90deg)}
-.think-ct{padding:0 14px 12px;font-size:14px;color:var(--text2);line-height:1.7;display:none}
-.think-ct.open{display:block}
-.think-ct pre{white-space:pre-wrap;word-break:break-word;margin:0}
-
 /* Code block - DeepSeek style */
 .code-block{margin:12px 0;border-radius:8px;background:var(--code-bg);border:1px solid var(--border);overflow:hidden}
 .code-hd{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--sidebar);font-size:12px;color:var(--muted)}
