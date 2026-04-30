@@ -367,48 +367,17 @@ function renderMarkdown(text) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Think 提取与折叠
+// 最终渲染
 // ──────────────────────────────────────────────────────────────────────────────
 function renderFinal(msgEl, rawText) {
   const bubble = msgEl.querySelector('.msg-bubble');
   if (!bubble) return;
 
-  // Case 1: <think>...</think> wrapped tags
-  const fullMatch = rawText.match(/<think>([\s\S]*?)<\/think>/);
-  if (fullMatch) {
-    const thinkText = fullMatch[1].trim();
-    const replyText = rawText.replace(/<think>[\s\S]*?<\/think>/, '').trim();
-    bubble.innerHTML = `
-      <div class="think-block">
-        <div class="think-hd">
-          <span>💭 思考过程</span>
-        </div>
-        <div class="think-ct">${renderMarkdown(thinkText)}</div>
-      </div>
-      <div class="reply-content">${renderMarkdown(replyText)}</div>
-    `;
-    return;
-  }
-
-  // Case 2: kimi-k2.6 style — content...</think>reply
-  const endMatch = rawText.match(/([\s\S]*?)<\/think>([\s\S]*)/);
-  if (endMatch) {
-    const thinkText = endMatch[1].trim();
-    const replyText = endMatch[2].trim();
-    bubble.innerHTML = `
-      <div class="think-block">
-        <div class="think-hd">
-          <span>💭 思考过程</span>
-        </div>
-        <div class="think-ct">${renderMarkdown(thinkText)}</div>
-      </div>
-      <div class="reply-content">${renderMarkdown(replyText)}</div>
-    `;
-    return;
-  }
-
-  // No think tags — just render markdown normally
-  bubble.innerHTML = renderMarkdown(rawText);
+  // 移除 think 标签，只保留回复内容
+  let cleanText = rawText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  cleanText = cleanText.replace(/[\s\S]*?<\/think>/, '').trim();
+  
+  bubble.innerHTML = renderMarkdown(cleanText || rawText);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -417,19 +386,7 @@ function renderFinal(msgEl, rawText) {
 function copyMsg(btn) {
   const msgEl = btn.closest('.msg');
   const bubble = msgEl.querySelector('.msg-bubble');
-  let text = '';
-  // Get think content if exists
-  const thinkCt = bubble.querySelector('.think-ct');
-  if (thinkCt && thinkCt.classList.contains('open')) {
-    text += thinkCt.textContent + '\n\n';
-  }
-  // Get reply content
-  const reply = bubble.querySelector('.reply-content');
-  if (reply) {
-    text += reply.innerText;
-  } else {
-    text += bubble.innerText;
-  }
+  const text = bubble.innerText;
   navigator.clipboard.writeText(text.trim()).then(() => {
     const original = btn.textContent;
     btn.textContent = '✓';
