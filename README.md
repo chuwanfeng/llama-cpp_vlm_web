@@ -1,36 +1,47 @@
-# LLM Chat — 双后端多模态 Web 聊天
+# LLM Chat — 多后端 Web 聊天
 
-本地大模型 Web 聊天界面，支持 **llama-cpp-python**（GPU/CPU 直跑 GGUF）和 **Ollama**（本地/云端模型）双后端实时切换，支持**多模态图片识别**、流式输出、提示词模板、Web 搜索。
+本地/云端大模型 Web 聊天界面，支持 **llama-cpp-python**（GPU/CPU 直跑 GGUF）、**Ollama**（本地/云端模型）、**多厂商 API**（OpenAI/DeepSeek/Anthropic/智谱/...）实时切换，支持多模态图片识别、流式输出、提示词模板、联网搜索。
 
 ## 功能特性
 
-- **双后端切换** — 侧边栏下拉框一键切换 llama-cpp / Ollama，无需重启
-- **多模态图片识别** — 两个后端均支持上传图片让模型识别描述
+- **多后端切换** — 侧边栏一键切换 llama-cpp / Ollama / 厂商 API，无需重启
+- **多厂商 API 支持** — OpenAI / DeepSeek / Anthropic / Gemini / 通义千问 / 智谱 AI / Moonshot / 自定义
+- **多模态图片识别** — llama-cpp 和 Ollama 后端均支持上传图片让模型识别描述
   - llama-cpp: 自动检测同目录 mmproj 文件，动态匹配 Qwen3.5/Qwen2.5-VL/LLaVA 等 ChatHandler
   - Ollama: 图片以 `images` 字段传入，支持本地和云端视觉模型
-- **流式输出** — 逐 token 实时显示，支持中断
+- **流式输出** — 逐 token 实时显示，支持中断（AbortController）
+- **中断对话** — 生成中可随时停止，发送按钮自动切换为停止按钮
+- **设置持久化** — API Key、推理参数等通过服务端 `settings.json` 统一持久化
+- **多厂商凭据管理** — 各厂商 API Key 独立保存，切换厂商时自动填入
 - **提示词模板** — 内置图像优化师、翻译器等模板，可自定义 CRUD
-- **Web 搜索** — DuckDuckGo 搜索结果，辅助模型回答
+- **联网搜索** — DuckDuckGo + Bing 搜索结果，辅助模型回答
 - **GPU/CPU 自动检测** — 启动时自动检测 CUDA，无 GPU 则走 CPU 模式或 Ollama
 
 ## 文件结构
 
 ```
 llama-cpp_vlm_web/
-├── main.py                # 入口，启动时打印后端状态
-├── config.py              # 常量参数（端口、模型目录、推理默认值）
-├── app.py                 # Flask 路由（统一入口 + 双后端路由 + 模板 CRUD + 搜索）
-├── gpu_backend.py         # llama-cpp-python 后端（模型加载/推理/mmproj 自动检测）
-├── ollama_backend.py      # Ollama 后端（REST API 代理/流式对话）
-├── prompts.py             # 提示词模板引擎（CRUD + 持久化 JSON）
-├── prompt_templates.json  # 模板存储文件
-├── requirements.txt       # Python 依赖
-├── start.bat              # Windows 一键启动
+├── main.py                    # 入口，启动时打印后端状态
+├── config.py                  # 常量（端口、模型目录、推理默认值）
+├── app.py                     # Flask 路由（统一入口 + 多后端路由 + 设置 API）
+├── backends/                  # 推理后端
+│   ├── __init__.py
+│   ├── gpu.py                 # llama-cpp-python 后端（模型加载/推理/mmproj 检测）
+│   ├── ollama.py              # Ollama 后端（REST API 代理/流式对话）
+│   └── vendors.py             # 厂商 API 后端（OpenAI/DeepSeek/Anthropic/...）
+├── services/                  # 通用服务
+│   ├── __init__.py
+│   ├── prompts.py             # 提示词模板引擎（CRUD + 持久化 JSON）
+│   ├── prompt_templates.json  # 模板存储
+│   └── search.py              # 联网搜索（DuckDuckGo + Bing）
+├── requirements.txt           # Python 依赖
+├── start.bat                  # Windows 一键启动
+├── settings.json              # 用户设置（API Key 等，已 .gitignore）
 ├── static/
-│   ├── css/style.css      # 样式
-│   └── js/app.js          # 前端逻辑（双后端适配/图片上传/SSE 流式）
+│   ├── css/style.css          # 样式
+│   └── js/app.js              # 前端逻辑（多后端适配/图片上传/SSE 流式）
 └── templates/
-    └── index.html         # 单页应用
+    └── index.html             # 单页应用
 ```
 
 ## 快速开始
@@ -49,6 +60,7 @@ python main.py
 - llama-cpp-python 已安装 → 优先使用
 - Ollama 正在运行 → 使用 Ollama
 - 都没有 → 降级模式，启动后手动启动 Ollama 或安装 llama-cpp-python
+- 厂商 API 始终可选（需填入对应 API Key）
 
 ## GPU 机器（llama-cpp-python）
 
@@ -71,7 +83,7 @@ python main.py
 > 0.3.19 版本 Python 绑定存在图片幻觉 bug（CLI 正确但 Python 输出幻觉），0.3.36 已修复。
 
 ```powershell
-# 需要CMake + VS Build Tools 2022 (MSVC)
+# 需要 CMake + VS Build Tools 2022 (MSVC)
 git clone https://github.com/JamePeng/llama-cpp-python.git
 cd llama-cpp-python
 git checkout v0.3.36
@@ -110,6 +122,29 @@ Ollama 后端支持本地模型和云端模型（如 `qwen3.5:cloud`）的图片
 
 > **注意**: Ollama API 的 `images` 字段只接受纯 base64 字符串（不含 `data:image/...;base64,` 前缀），传 data URI 会报 `illegal base64 data` 错误。
 
+## 厂商 API
+
+切换后端到"厂商 API"后，可在设置面板（⚙️）为各厂商填入 API Key 和自定义 Base URL。选项包括：
+
+| 厂商 | transport | 默认 base_url |
+|------|-----------|---------------|
+| OpenAI | openai_chat | `https://api.openai.com/v1` |
+| DeepSeek | openai_chat | `https://api.deepseek.com/v1` |
+| Anthropic (Claude) | anthropic_messages | `https://api.anthropic.com/v1` |
+| Gemini | gemini | `https://generativelanguage.googleapis.com/v1beta` |
+| 通义千问 | openai_chat | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| 智谱 AI | openai_chat | `https://open.bigmodel.cn/api/paas/v4` |
+| Moonshot | openai_chat | `https://api.moonshot.cn/v1` |
+| Ollama Cloud | openai_chat | `https://api.ollama.com/v1` |
+| 自定义 | openai_chat | - |
+
+API Key 支持三种来源（优先级从高到低）：
+1. 设置面板手动填入（持久化到 `settings.json`）
+2. 环境变量 `{VENDOR}_API_KEY`
+3. 留空（部分厂商允许免 Key 本地调用）
+
+> `settings.json` 已加入 `.gitignore`，避免 API Key 泄露。
+
 ## 配置
 
 编辑 `config.py` 或通过环境变量：
@@ -129,10 +164,11 @@ Ollama 后端支持本地模型和云端模型（如 `qwen3.5:cloud`）的图片
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/status` | GET | 后端状态（当前后端 + 可用后端列表） |
-| `/api/switch_backend` | POST | 切换后端 `{"backend": "llama-cpp"\|"ollama"}` |
+| `/api/switch_backend` | POST | 切换后端 `{"backend": "llama-cpp"\|"ollama"\|"vendors"}` |
 | `/api/health` | GET | 健康检查 |
+| `/api/settings` | GET/POST | 读取/保存用户设置（推理参数 + 厂商凭据） |
 | `/api/upload_image` | POST | 上传图片（返回 base64） |
-| `/api/search` | GET/POST | DuckDuckGo 搜索 |
+| `/api/search` | GET/POST | 联网搜索（DuckDuckGo + Bing 回退） |
 
 ### llama-cpp 后端
 
@@ -153,6 +189,13 @@ Ollama 后端支持本地模型和云端模型（如 `qwen3.5:cloud`）的图片
 | `/api/chat` | POST | 流式对话（支持 `images` 多模态） |
 | `/api/pull_model` | POST | 拉取模型 |
 
+### 厂商 API 后端
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/vendors` | GET | 厂商定义列表（含模型和 transport 信息） |
+| `/api/vendors/chat` | POST | 流式对话（SSE 格式） |
+
 ### 提示词模板
 
 | 接口 | 方法 | 说明 |
@@ -168,9 +211,10 @@ Ollama 后端支持本地模型和云端模型（如 `qwen3.5:cloud`）的图片
 - `GPU_DEFAULT_LAYERS=-1` 在纯 CPU 机器上会把所有层放 GPU（实际无 GPU），需改为 0
 - Ollama 云端模型（如 `qwen3.5:cloud`）首次请求延迟较高
 - llama-cpp-python 0.3.19 Python 绑定存在图片幻觉 bug，需升级到 0.3.36+
+- 重新生成消息功能因 llama-cpp-python KV cache bug 暂不可用
 
 ## 技术栈
 
-- **后端**: Python 3.12 + Flask + llama-cpp-python / Ollama REST API
-- **前端**: 原生 HTML/CSS/JS（无框架），SSE 流式输出
-- **模型**: GGUF (llama-cpp) / Ollama 本地+云端
+- **后端**: Python 3.12 + Flask + llama-cpp-python / Ollama REST API / OpenAI SDK
+- **前端**: 原生 HTML/CSS/JS（无框架），SSE 流式输出 + AbortController 中断
+- **模型**: GGUF (llama-cpp) / Ollama 本地+云端 / 厂商 API

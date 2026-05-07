@@ -1,12 +1,79 @@
 let curM = null, models = [], tpls = [], curTpl = null, attF = [], attI = [];
 let backendType = 'none';
+let webSearchEnabled = false;
+let vendorDefs = {};   // { vendorId: { name, models, has_server_key, base_url, default_model } }
+let vendorModels = []; // 当前 vendor 的模型列表
+let vendorId = null;   // 当前选中的 vendor ID
+let vendorCreds = {};  // { vendorId: { api_key, base_url } } — 多厂商凭据内存
+let abortCtrl = null;  // AbortController for stopping generation
+
+// ──────────────────────────────────────────────────────────────────────────────
+// 设置持久化
+// ──────────────────────────────────────────────────────────────────────────────
+async function saveSettings() {
+  // 先收集当前厂商凭据（从设置面板）
+  if (vendorId && isVendorBackend(backendType)) {
+    const key = document.getElementById('set-api-key')?.value || '';
+    const url = document.getElementById('set-base-url')?.value || '';
+    vendorCreds[vendorId] = { api_key: key, base_url: url };
+  }
+  const settings = {
+    temperature: document.getElementById('s-temp').value,
+    max_tokens: document.getElementById('s-max').value,
+    top_p: document.getElementById('s-topp').value,
+    vendor_creds: vendorCreds,
+    backend: backendType
+  };
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    });
+    if (res.ok) {
+      const msg = document.getElementById('s-msg');
+      if (msg) { msg.textContent = '✓ 已保存到项目目录'; setTimeout(() => msg.textContent = '', 2000); }
+    } else {
+      throw new Error('保存失败');
+    }
+  } catch (e) {
+    const msg = document.getElementById('s-msg');
+    if (msg) { msg.textContent = '✗ ' + e.message; setTimeout(() => msg.textContent = '', 3000); }
+  }
+}
+
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    if (!res.ok) return;
+    const s = await res.json();
+    if (s.temperature) { document.getElementById('s-temp').value = s.temperature; us('temp'); }
+    if (s.max_tokens) { document.getElementById('s-max').value = s.max_tokens; us('max'); }
+    if (s.top_p) { document.getElementById('s-topp').value = s.top_p; us('topp'); }
+    if (s.vendor_creds) {
+      vendorCreds = { ...s.vendor_creds };
+      // 如果当前已有 vendorId，恢复其凭据到设置面板
+      if (vendorId && vendorCreds[vendorId]) {
+        const vc = vendorCreds[vendorId];
+        if (document.getElementById('set-api-key')) document.getElementById('set-api-key').value = vc.api_key || '';
+        if (document.getElementById('set-base-url')) document.getElementById('set-base-url').value = vc.base_url || '';
+      }
+    }
+  } catch (e) {}
+}
+
+function stopGen() {
+  if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 初始化
 // ──────────────────────────────────────────────────────────────────────────────
 async function init() {
+  await loadSettings();
   await detectBackend();
   await loadT();
+  await loadVendors(); // 预加载厂商定义
   if (backendType === 'llama-cpp') {
     await loadLlamaModels();
   } else if (backendType === 'ollama') {
@@ -25,6 +92,7 @@ async function detectBackend() {
     if (bkSel) {
       const avail = data.available_backends || [];
       bkSel.querySelectorAll('option').forEach(opt => {
+        if (isVendorBackend(opt.value)) return; // 厂商 API 永远可选
         opt.disabled = !avail.includes(opt.value);
         opt.hidden = opt.disabled;
       });
@@ -61,7 +129,60 @@ function updateBackendStatus() {
   }
 }
 
+// ── 厂商 API 加载 ──────────────────────────────────────────────────────
+async function loadVendors() {
+  try {
+    const res = await fetch('/api/vendors');
+    const data = await res.json();
+    (data.vendors || []).forEach(v => { vendorDefs[v.id] = v; });
+  } catch (e) {
+    console.error('加载厂商列表失败:', e);
+  }
+}
+
+function isVendorBackend(t) {
+  return ['openai', 'deepseek', 'anthropic', 'gemini', 'qwen', 'zhipu', 'moonshot', 'ollama-cloud', 'custom',].includes(t);
+}
+
 async function switchBackend(target) {
+  // ── 厂商 API 后端（不需要服务端切换）──
+  if (isVendorBackend(target)) {
+    vendorId = target;
+    backendType = target;
+    curM = null;
+    vendorModels = vendorDefs[target]?.models || [];
+    const vdef = vendorDefs[target] || {};
+
+    // 加载已保存凭据
+    const savedCreds = vendorCreds[target] || {};
+    const keyInput = savedCreds.api_key || '';
+    const baseUrl = savedCreds.base_url || vdef.base_url || '';
+    
+    // key 状态提示（内存中）
+    if (vdef.has_server_key) {
+      // 环境变量已配，静默
+    } else if (!keyInput) {
+      // 需要输入 — 后续在设置面板提示
+    }
+    
+    // 同步到设置面板
+    syncVendorToSettings(vdef);
+
+    // 更新模型选择器
+    renderVendorModels(vendorModels, vdef.default_model);
+
+    // 状态栏
+    const dot = document.getElementById('st-dot');
+    const txt = document.getElementById('st-txt');
+    dot.classList.add('on');
+    txt.textContent = vdef.name || target;
+    return;
+  }
+
+  // ── 本地后端（llama-cpp / Ollama）──
+  vendorId = null;
+  document.getElementById('set-vendor').style.display = 'none';
+
   try {
     const res = await fetch('/api/switch_backend', {
       method: 'POST',
@@ -92,6 +213,21 @@ async function switchBackend(target) {
   } catch (e) {
     alert('切换失败: ' + e.message);
     document.getElementById('bk-sel').value = backendType;
+  }
+}
+
+function renderVendorModels(modelList, defaultModel) {
+  const sel = document.getElementById('m-sel');
+  sel.innerHTML = '<option value="">选择模型...</option>';
+  (modelList || []).forEach(m => {
+    sel.innerHTML += `<option value="${esc(m)}">${esc(m)}</option>`;
+  });
+  // 自定义厂商 + 手动输入框
+  if (vendorId === 'custom') {
+    sel.innerHTML += '<option value="__custom__">自定义模型名...</option>';
+  }
+  if (defaultModel) {
+    selModel(defaultModel);
   }
 }
 
@@ -143,6 +279,12 @@ function renderModelSelect() {
 }
 
 function selModel(n) {
+  // 自定义模型名
+  if (n === '__custom__') {
+    const customName = prompt('输入模型名:') || '';
+    if (!customName) return;
+    n = customName;
+  }
   const modelPath = (typeof n === 'object') ? n.path : n;
   const modelObj = (typeof n === 'object') ? n : models.find(m => (m.path || m) === n);
   curM = modelPath;
@@ -181,6 +323,38 @@ async function loadLlamaModel(modelName, modelObj) {
 // ──────────────────────────────────────────────────────────────────────────────
 // 对话发送
 // ──────────────────────────────────────────────────────────────────────────────
+
+function toggleWebSearch() {
+  webSearchEnabled = !webSearchEnabled;
+  const btn = document.getElementById('wbtn');
+  btn.classList.toggle('on', webSearchEnabled);
+  btn.title = webSearchEnabled ? '联网搜索：开' : '联网搜索：关';
+}
+
+function shouldSearch(query) {
+  if (query.length < 5) return false;
+  const questionPattern = /[？?吗呢]/;
+  if (questionPattern.test(query)) return true;
+  const infoKeywords = /最新|今天|现在|当前|最近|新闻|发生|价格|天气|股价|排名|几点|多少|哪里|什么|怎么|如何|为什么|推荐|哪个|什么时候|是谁|几月|几号|周几|星期|今年|明年|去年|本月|上月|刚刚|实时|行情|走势|预报|预测|公布|发布|上市|开盘|收盘|涨幅|跌幅|市值|汇率|利率|指数|数据|统计|报告|通知|政策|法规|规定|调整|变化|更新/;
+  return infoKeywords.test(query);
+}
+
+async function autoSearch(query) {
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (!res.ok || !data.results || data.results.length === 0) return '';
+    let ctx = '\n\n[联网搜索结果 — 请参考以下最新信息回答用户问题]\n';
+    data.results.forEach((r, i) => {
+      ctx += `${i + 1}. ${r.title}\n   ${r.snippet}\n   来源: ${r.url}\n`;
+    });
+    return ctx;
+  } catch (e) {
+    console.error('autoSearch failed:', e);
+    return '';
+  }
+}
+
 async function send() {
   const inp = document.getElementById('inp');
   const txt = inp.value.trim();
@@ -201,6 +375,12 @@ async function send() {
     if (t && t.system) systemPrompt = t.system;
   }
 
+  // 联网搜索：开关开启 + 智能判断
+  if (webSearchEnabled && shouldSearch(txt)) {
+    const searchCtx = await autoSearch(txt);
+    if (searchCtx) systemPrompt = (systemPrompt ? systemPrompt + searchCtx : searchCtx.trim());
+  }
+
   addMsg('usr', txt, [...attI, ...attF]);
   inp.value = '';
   inp.style.height = 'auto';
@@ -213,20 +393,42 @@ async function send() {
 
   const assistantMsg = addMsg('ast', '');
 
+  // AbortController for stopping
+  abortCtrl = new AbortController();
+  const sbtn = document.getElementById('sbtn');
+  const stbtn = document.getElementById('stbtn');
+  sbtn.style.display = 'none';
+  stbtn.style.display = 'flex';
+
   try {
     if (backendType === 'llama-cpp') {
-      await sendLlama(content, systemPrompt, savedImages, assistantMsg);
+      await sendLlama(content, systemPrompt, savedImages, assistantMsg, abortCtrl.signal);
     } else if (backendType === 'ollama') {
-      await sendOllama(content, systemPrompt, savedImages, assistantMsg);
+      await sendOllama(content, systemPrompt, savedImages, assistantMsg, abortCtrl.signal);
+    } else if (isVendorBackend(backendType)) {
+      await sendVendor(content, systemPrompt, savedImages, assistantMsg, abortCtrl.signal);
     } else {
       throw new Error('无可用后端');
     }
   } catch (e) {
-    assistantMsg.querySelector('.ct').innerHTML = `<span class="err">请求失败: ${esc(e.message)}</span>`;
+    if (e.name === 'AbortError') {
+      const bubble = assistantMsg.querySelector('.msg-bubble');
+      if (bubble && bubble.textContent.trim()) {
+        bubble.innerHTML += '<br><span style="color:var(--muted);font-style:italic">[已停止]</span>';
+      } else if (bubble) {
+        bubble.innerHTML = '<span style="color:var(--muted);font-style:italic">[已停止]</span>';
+      }
+    } else {
+      assistantMsg.querySelector('.ct').innerHTML = `<span class="err">请求失败: ${esc(e.message)}</span>`;
+    }
+  } finally {
+    abortCtrl = null;
+    sbtn.style.display = 'flex';
+    stbtn.style.display = 'none';
   }
 }
 
-async function sendLlama(content, systemPrompt, images, msgEl) {
+async function sendLlama(content, systemPrompt, images, msgEl, signal) {
   const body = {
     prompt: content,
     system_prompt: systemPrompt || undefined,
@@ -241,7 +443,8 @@ async function sendLlama(content, systemPrompt, images, msgEl) {
   const res = await fetch('/api/llama/infer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   });
   if (!res.ok) {
     const err = await res.text();
@@ -252,8 +455,16 @@ async function sendLlama(content, systemPrompt, images, msgEl) {
   let buffer = '';
   let fullText = '';
   const ctElement = msgEl.querySelector('.ct');
-  ctElement.innerHTML = '<div class="msg-bubble"></div>';
-  const bubble = ctElement.querySelector('.msg-bubble');
+  let bubble = ctElement.querySelector('.msg-bubble');
+  if (bubble) {
+    bubble.innerHTML = '';
+  } else {
+    bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    const actions = ctElement.querySelector('.msg-actions');
+    if (actions) ctElement.insertBefore(bubble, actions);
+    else ctElement.appendChild(bubble);
+  }
 
   while (true) {
     const { value, done } = await reader.read();
@@ -280,7 +491,7 @@ async function sendLlama(content, systemPrompt, images, msgEl) {
   else renderFinal(msgEl, fullText);
 }
 
-async function sendOllama(content, systemPrompt, images, msgEl) {
+async function sendOllama(content, systemPrompt, images, msgEl, signal) {
   const messages = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
   if (images && images.length) {
@@ -302,7 +513,8 @@ async function sendOllama(content, systemPrompt, images, msgEl) {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   });
   if (!res.ok) {
     const err = await res.text();
@@ -313,8 +525,16 @@ async function sendOllama(content, systemPrompt, images, msgEl) {
   const decoder = new TextDecoder();
   let buffer = '';
   const ctElement = msgEl.querySelector('.ct');
-  ctElement.innerHTML = '<div class="msg-bubble"></div>';
-  const bubble = ctElement.querySelector('.msg-bubble');
+  let bubble = ctElement.querySelector('.msg-bubble');
+  if (bubble) {
+    bubble.innerHTML = '';
+  } else {
+    bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    const actions = ctElement.querySelector('.msg-actions');
+    if (actions) ctElement.insertBefore(bubble, actions);
+    else ctElement.appendChild(bubble);
+  }
 
   while (true) {
     const { value, done } = await reader.read();
@@ -340,6 +560,101 @@ async function sendOllama(content, systemPrompt, images, msgEl) {
   if (!full) bubble.innerHTML = '(空响应)';
   else renderFinal(msgEl, full);
 }
+
+// ── 厂商 API 发送 ──────────────────────────────────────────────────────
+async function sendVendor(content, systemPrompt, images, msgEl, signal) {
+  const messages = [];
+  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+  if (images && images.length) {
+    const imgsContent = images.map(img => ({
+      type: 'image_url',
+      image_url: { url: img.base64 }
+    }));
+    messages.push({
+      role: 'user',
+      content: [{ type: 'text', text: content || 'Describe this image.' }, ...imgsContent]
+    });
+  } else {
+    messages.push({ role: 'user', content: content });
+  }
+
+  const creds = vendorCreds[vendorId] || {};
+  const apiKey = creds.api_key || '';
+  const baseUrl = creds.base_url || '';
+
+  // 处理自定义模型名
+  let model = curM;
+  if (model === '__custom__') {
+    model = prompt('输入模型名:') || '';
+    if (!model) { msgEl.querySelector('.ct').innerHTML = '<span class="err">已取消</span>'; return; }
+  }
+
+  const body = {
+    vendor: vendorId,
+    model: model,
+    messages: messages,
+    api_key: apiKey,
+    base_url: baseUrl,
+    max_tokens: parseInt(document.getElementById('s-max').value),
+    temperature: parseFloat(document.getElementById('s-temp').value),
+    top_p: parseFloat(document.getElementById('s-topp').value),
+  };
+
+  const res = await fetch('/api/vendors/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+
+  let full = '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const ctElement = msgEl.querySelector('.ct');
+  let bubble = ctElement.querySelector('.msg-bubble');
+  if (bubble) {
+    bubble.innerHTML = '';
+  } else {
+    bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    const actions = ctElement.querySelector('.msg-actions');
+    if (actions) ctElement.insertBefore(bubble, actions);
+    else ctElement.appendChild(bubble);
+  }
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (line === 'data: [DONE]') continue;
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const data = JSON.parse(line.slice(6));
+        if (data.error) throw new Error(data.error);
+        if (data.content) {
+          full += data.content;
+          bubble.innerHTML = renderMarkdown(full);
+          msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      } catch (e) {
+        if (e.message && !e.message.startsWith('[')) throw e;
+      }
+    }
+  }
+  if (!full) bubble.innerHTML = '(空响应)';
+  else renderFinal(msgEl, full);
+}
+
+// ── 厂商 API 发送结束 ──────────────────────────────────────────────────
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Markdown 渲染
@@ -422,6 +737,8 @@ function deleteMsg(btn) {
 
 function regenerateMsg(btn) {
   const msgEl = btn.closest('.msg');
+  if (!msgEl) return;
+
   // Find the previous user message
   let prevUserMsg = null;
   const allMsgs = Array.from(document.querySelectorAll('.msg'));
@@ -432,6 +749,12 @@ function regenerateMsg(btn) {
       break;
     }
   }
+  if (!prevUserMsg) return;
+
+  const bubble = prevUserMsg.querySelector('.msg-bubble');
+  const text = bubble ? bubble.innerText.trim() : '';
+  if (!text) return;
+
   // Remove this assistant message and all after it
   let remove = false;
   allMsgs.forEach(m => {
@@ -441,14 +764,14 @@ function regenerateMsg(btn) {
       m.remove();
     }
   });
-  // If found previous user message, re-send
-  if (prevUserMsg) {
-    const bubble = prevUserMsg.querySelector('.msg-bubble');
-    const text = bubble.innerText;
-    const inp = document.getElementById('inp');
-    inp.value = text;
-    send();
-  }
+
+  // Remove the old user message (send() will re-add it)
+  prevUserMsg.remove();
+
+  // Re-send
+  const inp = document.getElementById('inp');
+  inp.value = text;
+  send();
 }
 
 function copyCode(btn) {
@@ -760,6 +1083,8 @@ async function doTr() {
     });
     const data = await res.json();
     out.value = data.output || '';
+  } else if (isVendorBackend(backendType)) {
+    await doTrVendor(prompt, out);
   } else {
     const res = await fetch('/api/chat', {
       method: 'POST',
@@ -794,12 +1119,112 @@ function clrTr() {
   document.getElementById('to').value = '';
 }
 
+async function doTrVendor(prompt, outEl) {
+  const creds = vendorCreds[vendorId] || {};
+  const apiKey = creds.api_key || '';
+  const baseUrl = creds.base_url || '';
+  const body = {
+    vendor: vendorId,
+    model: curM,
+    messages: [{ role: 'user', content: prompt }],
+    api_key: apiKey,
+    base_url: baseUrl,
+    temperature: 0.3,
+    max_tokens: 4096,
+  };
+  const res = await fetch('/api/vendors/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    outEl.value = '错误: ' + (err.error || '请求失败');
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '', full = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (line === 'data: [DONE]') continue;
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const d = JSON.parse(line.slice(6));
+        if (d.content) { full += d.content; outEl.value = full; }
+      } catch { }
+    }
+  }
+}
+
 // 设置
 function us(k) {
   const ids = { temp: 's-temp', max: 's-max', topp: 's-topp' };
   const vals = { temp: 'v-temp', max: 'v-max', topp: 'v-topp' };
   document.getElementById(vals[k]).textContent = document.getElementById(ids[k]).value;
 }
+
+function syncVendorToSettings(vdef) {
+  const sec = document.getElementById('set-vendor');
+  const vdef_ = vdef || vendorDefs[vendorId] || {};
+  const vc = vendorCreds[vendorId] || {};
+  if (isVendorBackend(backendType)) {
+    sec.style.display = 'block';
+    document.getElementById('set-vendor-name').textContent = vdef_.name ? ' — ' + vdef_.name : '';
+    document.getElementById('set-api-key').value = vc.api_key || '';
+    document.getElementById('set-base-url').value = vc.base_url || vdef_.base_url || '';
+    // key 状态提示
+    const hasServerKey = vdef_.has_server_key;
+    const hasLocalKey = vc.api_key;
+    const statusEl = document.getElementById('set-key-status');
+    if (hasServerKey) {
+      statusEl.innerHTML = '<span style="color:#4ade80">✓ 已通过环境变量配置</span>';
+    } else if (hasLocalKey) {
+      statusEl.innerHTML = '<span style="color:#4ade80">✓ 已保存</span>';
+    } else {
+      statusEl.innerHTML = '<span style="color:#f59e0b">⚠ 需要输入 API Key</span>';
+    }
+  } else {
+    sec.style.display = 'none';
+  }
+}
+
+function syncVendorKey() {
+  // 不再同步到侧边栏（侧边栏已移除）
+}
+
+function syncVendorUrl() {
+  // 不再同步到侧边栏（侧边栏已移除）
+}
+
+// 输入框变动时同步到内存凭据 + 更新状态
+function onVendorCredChanged() {
+  if (!vendorId || !isVendorBackend(backendType)) return;
+  const key = document.getElementById('set-api-key')?.value || '';
+  const url = document.getElementById('set-base-url')?.value || '';
+  vendorCreds[vendorId] = { api_key: key, base_url: url };
+  const vdef = vendorDefs[vendorId] || {};
+  const statusEl = document.getElementById('set-key-status');
+  if (vdef.has_server_key) {
+    statusEl.innerHTML = '<span style="color:#4ade80">✓ 已通过环境变量配置</span>';
+  } else if (key) {
+    statusEl.innerHTML = '<span style="color:#4ade80">✓ 已保存</span>';
+  } else {
+    statusEl.innerHTML = '<span style="color:#f59e0b">⚠ 需要输入 API Key</span>';
+  }
+}
+
+// ── 导航时刷新设置面板 ──────────────────────────────────────────────────
+const _origNav = nav;
+nav = function (n) {
+  _origNav(n);
+  if (n === 'settings') syncVendorToSettings();
+};
 
 // 启动
 init();

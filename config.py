@@ -25,6 +25,17 @@ DEFAULT_TOP_P = 0.9
 DEFAULT_TOP_K = 40
 DEFAULT_REPEAT_PENALTY = 1.0
 
+# ─── 厂商 API ───────────────────────────────────────────────────────────────
+# 各厂商 API key 通过环境变量配置（参照 api_backends.py 中的 VENDORS 定义）:
+#   OPENAI_API_KEY     — OpenAI
+#   DEEPSEEK_API_KEY   — DeepSeek
+#   ANTHROPIC_API_KEY  — Anthropic Claude
+#   GOOGLE_API_KEY     — Google Gemini
+#   DASHSCOPE_API_KEY  — 通义千问
+#   ZHIPUAI_API_KEY    — 智谱 AI
+#   MOONSHOT_API_KEY   — Moonshot / Kimi
+VENDOR_TIMEOUT = int(os.environ.get("VENDOR_TIMEOUT", 120))
+
 # ─── Web 服务 ────────────────────────────────────────────────────────────────
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 5000))

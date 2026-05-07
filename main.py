@@ -2,8 +2,8 @@
 入口
 """
 from config import HOST, PORT, DEBUG, MODELS_DIR
-from gpu_backend import HAVE_GPU, list_models, is_loaded, get_config
-from ollama_backend import available as ollama_available, get_models as ollama_get_models
+from backends.gpu import HAVE_GPU, list_models, is_loaded, get_config
+from backends.ollama import available as ollama_available, get_models as ollama_get_models
 
 if __name__ == "__main__":
     from app import app

@@ -22,16 +22,16 @@ logging.basicConfig(
 log = logging.getLogger("llm-web")
 
 # ─── 后端选择（llama-cpp 优先）────────────────────────────────────────────────
-from gpu_backend import LLAMA_AVAILABLE, HAVE_GPU, is_loaded as llama_is_loaded
-from gpu_backend import get_config as llama_get_config, load_model as llama_load_model
-from gpu_backend import unload_model as llama_unload_model, list_models as llama_list_models
-from gpu_backend import infer as llama_infer
+from backends.gpu import LLAMA_AVAILABLE, HAVE_GPU, is_loaded as llama_is_loaded
+from backends.gpu import get_config as llama_get_config, load_model as llama_load_model
+from backends.gpu import unload_model as llama_unload_model, list_models as llama_list_models
+from backends.gpu import infer as llama_infer
 
-from ollama_backend import available as ollama_available, check as ollama_check
-from ollama_backend import get_models as ollama_get_models, pull_model as ollama_pull
-from ollama_backend import chat_stream as ollama_chat_stream
-from ollama_backend import enhance_prompt
-from prompts import list_templates, get_template, save_template, delete_template, apply_template
+from backends.ollama import available as ollama_available, check as ollama_check
+from backends.ollama import get_models as ollama_get_models, pull_model as ollama_pull
+from backends.ollama import chat_stream as ollama_chat_stream
+from backends.ollama import enhance_prompt
+from services.prompts import list_templates, get_template, save_template, delete_template, apply_template
 
 # 确定活跃后端
 # 优先级: llama-cpp (如果可用) > Ollama (如果运行中) > 无
@@ -129,6 +129,30 @@ def api_status():
     })
 
 
+# ─── 设置持久化（项目目录 settings.json）──────────────────────────────────────
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+
+@app.route("/api/settings", methods=["GET", "POST"])
+def api_settings():
+    if request.method == "GET":
+        try:
+            if os.path.exists(SETTINGS_FILE):
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    return jsonify(json.load(f))
+        except Exception as e:
+            log.warning("读取设置失败: %s", e)
+        return jsonify({})
+    else:
+        try:
+            data = request.json or {}
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return jsonify({"status": "saved"})
+        except Exception as e:
+            log.error("保存设置失败: %s", e)
+            return _err(str(e), 500)
+
+
 @app.route("/api/switch_backend", methods=["POST"])
 def api_switch_backend():
     """切换后端"""
@@ -165,8 +189,6 @@ def api_upload_image():
 # ═══════════════════════════════════════════════════════════════════════════════
 # 通用路由（模板 CRUD）— 不依赖后端类型
 # ═══════════════════════════════════════════════════════════════════════════════
-from prompts import list_templates, get_template, save_template, delete_template, apply_template
-
 @app.route("/api/prompt_templates", methods=["GET"])
 def api_templates_list():
     return jsonify({"templates": list_templates()})
@@ -382,27 +404,87 @@ def api_search():
     if not query:
         return _err("缺少查询关键字", 400)
     try:
-        import requests
-        from urllib.parse import quote
-        url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code != 200:
-            return _err("搜索失败", 500)
-        import re
-        results = []
-        pattern = r'<a rel="nofollow" class="result__a" href="([^"]+)">([^<]+)</a>.*?<a class="result__snippet"[^>]*>([^<]+(?:<[^>]+>[^<]*</[^>]+>)*?)</a>'
-        matches = re.findall(pattern, resp.text, re.DOTALL)
-        for url, title, snippet in matches[:5]:
-            snippet = re.sub(r'<[^>]+>', '', snippet)
-            results.append({
-                "title": title,
-                "url": url,
-                "snippet": snippet[:200] + "..." if len(snippet) > 200 else snippet
-            })
+        from services.search import search_ddg, search_bing
+
+        results = search_ddg(query)
+        if not results:
+            log.info("DDG 无结果，尝试 Bing")
+            results = search_bing(query)
+
         return jsonify({"query": query, "results": results, "count": len(results)})
     except Exception as e:
         log.error("搜索失败: %s", e)
+        return _err(str(e), 500)
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 厂商 API 路由（OpenAI / DeepSeek / Anthropic / Gemini / Qwen / Zhipu / 自定义）
+# ═══════════════════════════════════════════════════════════════════════════════
+@app.route("/api/vendors")
+def api_vendors():
+    """列出所有可用的厂商（含模型列表和 server 端 API key 状态）。"""
+    try:
+        from backends.vendors import get_available_vendors
+        vendors = get_available_vendors()
+        return jsonify({"vendors": vendors})
+    except Exception as e:
+        log.error("获取厂商列表失败: %s", e)
+        return _err(str(e), 500)
+
+
+@app.route("/api/vendors/chat", methods=["POST"])
+def api_vendors_chat():
+    """统一厂商聊天接口（流式）。
+
+    请求体:
+        {
+            "vendor": "openai",
+            "model": "gpt-4o-mini",
+            "messages": [{"role":"user","content":"Hello"}],
+            "api_key": "sk-...",        // 可选，覆盖环境变量
+            "base_url": "https://...",   // 可选，仅 custom 厂商需要
+            "max_tokens": 4096,
+            "temperature": 0.7,
+            "top_p": 0.9
+        }
+    """
+    data = request.json or {}
+    vendor_id = data.get("vendor", "").strip()
+    model = data.get("model", "").strip()
+    messages = data.get("messages", [])
+
+    if not vendor_id:
+        return _err("缺少 vendor 参数")
+    if not model:
+        return _err("缺少 model 参数")
+    if not messages:
+        return _err("缺少 messages 参数")
+
+    try:
+        from backends.vendors import chat_stream
+
+        def generate():
+            try:
+                for chunk in chat_stream(
+                    vendor_id=vendor_id,
+                    model=model,
+                    messages=messages,
+                    api_key=data.get("api_key", ""),
+                    base_url=data.get("base_url", ""),
+                    max_tokens=data.get("max_tokens"),
+                    temperature=data.get("temperature"),
+                    top_p=data.get("top_p"),
+                ):
+                    yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                log.error("厂商流式错误: %s", e)
+                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+        return Response(stream_with_context(generate()), mimetype="text/event-stream")
+    except Exception as e:
+        log.error("厂商聊天失败: %s", e)
         return _err(str(e), 500)
 
 

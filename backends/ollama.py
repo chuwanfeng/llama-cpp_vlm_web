@@ -11,7 +11,7 @@ from config import (
     DEFAULT_TEMPERATURE, DEFAULT_TOP_P, DEFAULT_TOP_K,
     DEFAULT_REPEAT_PENALTY,
 )
-from prompts import apply_template, get_template
+from services.prompts import apply_template, get_template
 
 log = logging.getLogger("llm-web")
 

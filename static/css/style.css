@@ -118,7 +118,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 @keyframes blink{50%{opacity:0}}
 .msg .err{color:var(--danger)}
 
-/* Message actions - DeepSeek style */
+/* Message actions */
 .msg-actions{display:flex;gap:4px;opacity:0;transition:opacity .2s;margin-top:6px}
 .msg:hover .msg-actions{opacity:1}
 .msg.usr .msg-actions{justify-content:flex-end}
@@ -157,8 +157,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .in-acts button{width:36px;height:36px;border:none;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
 .abtn{background:0;color:var(--muted)}
 .abtn:hover{background:var(--card);color:var(--text)}
-.sbtn{background:var(--text);color:var(--bg)}
-.sbtn:hover{background:var(--text2)}
+.wbtn{background:0;color:var(--muted);font-size:18px;filter:grayscale(100%)}
+.wbtn:hover{background:var(--card)}
+.wbtn.on{filter:none;color:#4a6cf7}
+.sbtn{background:#4a6cf7;color:#fff}
+.in-acts .sbtn{border-radius:50%}
+.sbtn:hover{background:#5b7df8}
 .sbtn:disabled{background:var(--border);color:var(--muted);cursor:not-allowed}
 
 /* Empty */
@@ -170,11 +174,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .set-panel{padding:24px;overflow-y:auto}
 .set-sec{max-width:600px;margin:0 auto 32px}
 .set-sec h2{font-size:18px;margin-bottom:16px;padding-bottom:8px;color:var(--text)}
-.s-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
-.s-row:last-child{border:none}
-.s-row label{font-size:14px;color:var(--text2)}
-.s-row input[type=range]{width:200px}
-.s-val{font-size:14px;color:var(--text);min-width:50px;text-align:right}
+.s-row{display:flex;align-items:center;gap:12px;padding:12px 0}
+.s-row label{font-size:14px;color:var(--text2);flex-shrink:0;min-width:105px}
+.s-row input[type=range]{flex:1;max-width:280px}
+.s-row input[type=text],.s-row input[type=password]{flex:1;max-width:280px;padding:6px 10px;border-radius:6px;background:var(--input);color:var(--text);font-size:13px;border:1px solid var(--border)}
+.s-val{font-size:14px;color:var(--text);min-width:55px;text-align:right;flex-shrink:0}
+.s-actions{display:flex;align-items:center;gap:16px;margin:24px auto 0;max-width:600px}
+.s-save{padding:10px 20px;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;border:none;transition:opacity .15s}
+.s-save:hover{opacity:.85}
+.s-msg{font-size:13px;color:var(--accent)}
+#stbtn{color:var(--danger);font-size:16px}
+#stbtn:hover{background:var(--card)}
 
 /* Templates */
 .tpl-panel{display:flex;flex:1;min-height:0}

@@ -17,8 +17,21 @@
     <div class="sb-sec">
       <h3>后端</h3>
       <select class="m-sel" id="bk-sel" onchange="switchBackend(this.value)">
-        <option value="llama-cpp">llama-cpp</option>
-        <option value="ollama">Ollama</option>
+        <optgroup label="本地">
+          <option value="llama-cpp">llama-cpp</option>
+          <option value="ollama">Ollama</option>
+        </optgroup>
+        <optgroup label="厂商 API">
+          <option value="openai">OpenAI</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="qwen">通义千问</option>
+          <option value="zhipu">智谱 AI</option>
+          <option value="moonshot">Moonshot</option>
+          <option value="ollama-cloud">Ollama Cloud</option>
+          <option value="custom">自定义</option>
+        </optgroup>
       </select>
     </div>
     <div class="sb-sec">
@@ -80,7 +93,9 @@
           <textarea id="inp" placeholder="输入消息，Shift+Enter 换行..." rows="1" onkeydown="onKey(event)" oninput="ar(this)"></textarea>
           <div class="in-acts">
             <button class="abtn" onclick="document.getElementById('fi').click()" title="附件">📎</button>
+            <button class="wbtn" id="wbtn" onclick="toggleWebSearch()" title="联网搜索">🌐</button>
             <button class="abtn" onclick="webSearch()" title="Web搜索">🔍</button>
+            <button class="abtn" id="stbtn" onclick="stopGen()" style="display:none" title="停止生成">■</button>
           <button class="sbtn" id="sbtn" onclick="send()">↑</button>
           </div>
         </div>
@@ -122,12 +137,20 @@
     <!-- Settings -->
     <div class="panel" id="p-settings">
       <div class="set-panel">
+        <!-- 厂商配置 -->
+        <div class="set-sec" id="set-vendor" style="display:none">
+          <h2>厂商 API 配置 <span id="set-vendor-name"></span></h2>
+          <div class="s-row"><label>API Key</label><input type="password" id="set-api-key" placeholder="API Key（留空使用环境变量）" onchange="onVendorCredChanged()"><span class="s-val" id="set-key-status"></span></div>
+          <div class="s-row"><label>Base URL</label><input type="text" id="set-base-url" placeholder="Base URL（可选）" onchange="onVendorCredChanged()"></div>
+        </div>
+        <!-- 推理参数 -->
         <div class="set-sec">
           <h2>推理参数</h2>
           <div class="s-row"><label>Temperature</label><input type="range" id="s-temp" min="0" max="2" step=".1" value=".7" oninput="us('temp')"><span class="s-val" id="v-temp">0.7</span></div>
           <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max" min="256" max="8192" step="256" value="4096" oninput="us('max')"><span class="s-val" id="v-max">4096</span></div>
           <div class="s-row"><label>Top P</label><input type="range" id="s-topp" min="0" max="1" step=".05" value=".9" oninput="us('topp')"><span class="s-val" id="v-topp">0.9</span></div>
         </div>
+        <div class="s-actions"><button class="s-save" onclick="saveSettings()">💾 保存设置</button><span class="s-msg" id="s-msg"></span></div>
       </div>
     </div>
   </div>

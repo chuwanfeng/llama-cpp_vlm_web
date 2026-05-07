@@ -11,3 +11,8 @@ pillow>=10.0.0
 # llama-cpp-python>=0.3.0  # Windows CUDA wheel: pip install llama-cpp-python --index-url https://jamepeng.github.io/whl/cu121
 # numpy>=1.26.0
 # scipy>=1.11.0
+
+# ── 厂商 API 模式需要（按需安装）───────────────
+# pip install openai              # OpenAI / DeepSeek / Qwen / Zhipu / Moonshot / 自定义
+# pip install anthropic           # Anthropic Claude
+# pip install google-generativeai # Google Gemini
