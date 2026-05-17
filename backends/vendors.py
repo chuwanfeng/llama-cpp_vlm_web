@@ -3,9 +3,9 @@
 参考 hermes-agent 的 providers.py 架构，简化适配 Web Chat UI。
 """
 import os
-import logging
 
-log = logging.getLogger("llm-web")
+from utils import get_logger
+log = get_logger("backends.vendors")
 
 # ── 可选依赖检测 ──────────────────────────────────────────────────────────────
 OPENAI_AVAILABLE = False
@@ -51,8 +51,13 @@ VENDORS = {
         "base_url": "https://api.deepseek.com",
         "api_key_env": "DEEPSEEK_API_KEY",
         "transport": "openai_chat",
-        "models": ["deepseek-chat", "deepseek-reasoner"],
-        "default_model": "deepseek-chat",
+        "models": [
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+            "deepseek-chat",
+            "deepseek-reasoner",
+        ],
+        "default_model": "deepseek-v4-flash",
     },
     "anthropic": {
         "name": "Anthropic Claude",
@@ -92,6 +97,14 @@ VENDORS = {
             "qwen-plus-latest",
             "qwen-max-latest",
             "qwen3-235b-a22b",
+            "deepseek-v4-flash",  # 到期2026/07/24
+            "deepseek-v4-pro",
+            "qwen3.6-27b",  # 到期2026/07/23
+            "glm-5.1",  # 到期2026/07/14
+            "kimi-k2.6",  # 到期2026/07/21
+            "qwen3.5-397b-a17b",  # 到期2026/05/18
+            "qwen3.5-plus",
+            "glm-5",
         ],
         "default_model": "qwen-plus",
     },
@@ -101,11 +114,11 @@ VENDORS = {
         "api_key_env": "ZHIPUAI_API_KEY",
         "transport": "openai_chat",
         "models": [
-            "glm-4-plus",
+            "GLM-5.1",
+            "GLM-5V-Turbo",
+            "glm-4.7-flash",
+            "GLM-4-Flash-250414",
             "glm-4-flash",
-            "glm-4-air",
-            "glm-4-airx",
-            "glm-4-long",
         ],
         "default_model": "glm-4-flash",
     },
@@ -214,6 +227,21 @@ def chat_stream(vendor_id: str, model: str, messages: list,
     if not base_url:
         base_url = vdef.get("base_url", "")
 
+    # Enable vendor built-in search (Zhipu/DeepSeek/Moonshot)
+    # NOTE: skip injection when tools=None (caller explicitly wants no tools)
+    _SEARCH_VENDORS = {"zhipu", "moonshot"}
+    if vendor_id in _SEARCH_VENDORS:
+        _tools = params.get("tools")
+        if _tools is None:
+            pass  # tools=None means caller doesn't want tools (e.g. summary gen)
+        else:
+            if not _tools:
+                _tools = []
+            _has = any(t.get("type") == "web_search" for t in _tools)
+            if not _has:
+                _tools.append({"type": "web_search", "web_search": {"enable": True, "search_result": True}})
+                params["tools"] = _tools
+
     if transport == "anthropic_messages":
         yield from _anthropic_stream(model, messages, api_key, base_url, vdef, **params)
     elif transport == "gemini":
@@ -225,8 +253,15 @@ def chat_stream(vendor_id: str, model: str, messages: list,
 # ═══════════════════════════════════════════════════════════════════════════════
 # OpenAI 兼容传输层（OpenAI / DeepSeek / Qwen / Zhipu / Moonshot / Custom）
 # ═══════════════════════════════════════════════════════════════════════════════
-def _openai_stream(model: str, messages: list, api_key: str, base_url: str, **params):
-    """OpenAI 兼容流式 API。"""
+def _openai_stream(model: str, messages: list, api_key: str, base_url: str,
+                   tools: list = None, tool_choice: str = "auto", **params):
+    """OpenAI 兼容流式 API（支持原生 tool calling）。
+
+    产出（dict）：
+      {"content": "文本块"}           — 普通文本内容
+      {"tool_calls": [...]}            — 积攒完成的工具调用列表
+      {"finish_reason": "stop/tool_calls"}  — 结束信号（可选）
+    """
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key, base_url=base_url, timeout=120)
@@ -235,7 +270,7 @@ def _openai_stream(model: str, messages: list, api_key: str, base_url: str, **pa
     if "deepseek" in (base_url or ""):
         messages = _normalize_deepseek_messages(messages)
 
-    stream = client.chat.completions.create(
+    create_kwargs: dict = dict(
         model=model,
         messages=messages,
         stream=True,
@@ -245,9 +280,60 @@ def _openai_stream(model: str, messages: list, api_key: str, base_url: str, **pa
         stream_options={"include_usage": True},
     )
 
+    if tools:
+        create_kwargs["tools"] = tools
+        create_kwargs["tool_choice"] = tool_choice
+
+    stream = client.chat.completions.create(**create_kwargs)
+
+    # 工具调用积攒（OpenAI 流式 tool_calls 逐块返回）
+    _tc_acc: dict = {}
+    # 推理内容积攒（DeepSeek / Zhipu thinking 模式会逐块返回 reasoning_content）
+    reasoning_content = ""
+
     for chunk in stream:
-        if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-            yield chunk.choices[0].delta.content
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        finish_reason = chunk.choices[0].finish_reason
+
+        # —— 推理内容（thinking mode）——
+        if delta and hasattr(delta, "reasoning_content") and delta.reasoning_content:
+            reasoning_content += delta.reasoning_content
+
+        # —— 文本内容 ——
+        if delta and delta.content:
+            yield {"content": delta.content}
+
+        # —— 工具调用 delta（逐 index 积攒）——
+        if delta and delta.tool_calls:
+            for tc in delta.tool_calls:
+                idx = tc.index
+                if idx not in _tc_acc:
+                    _tc_acc[idx] = {
+                        "id": "", "type": "function",
+                        "function": {"name": "", "arguments": ""}
+                    }
+                acc = _tc_acc[idx]
+                if tc.id:
+                    acc["id"] = tc.id
+                if tc.function:
+                    if tc.function.name:
+                        acc["function"]["name"] += tc.function.name
+                    if tc.function.arguments:
+                        acc["function"]["arguments"] += tc.function.arguments
+
+        # —— 流结束，发出积攒完成的推理内容和工具调用 ——
+        if finish_reason:
+            if reasoning_content:
+                yield {"reasoning_content": reasoning_content}
+            if _tc_acc:
+                sorted_tcs = [_tc_acc[i] for i in sorted(_tc_acc.keys())]
+                yield {"tool_calls": sorted_tcs, "finish_reason": finish_reason}
+                _tc_acc.clear()
+            elif not reasoning_content:
+                # 非工具调用的结束信号（可选）——
+                yield {"finish_reason": finish_reason}
 
 
 def _normalize_deepseek_messages(messages: list) -> list:
