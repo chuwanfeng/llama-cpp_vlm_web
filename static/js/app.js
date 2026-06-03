@@ -10,6 +10,8 @@ let sessionList = [];    // 会话列表缓存
 let vendorId = null;   // 当前选中的 vendor ID
 let vendorCreds = {};  // { vendorId: { api_key, base_url } } — 多厂商凭据内存
 let abortCtrl = null;  // AbortController for stopping generation
+let _tokenCount = 0;  // 当前对话 token 计数（估算）
+let _reasoningText = '';  // 当前 reasoning 内容
 let _compressedMsgs = null; // 压缩后的消息（null=未压缩）
 let _fullMessages = []; // 完整消息历史（含 tool calls/results）
 let _currentAssistantMsg = null; // 当前助手消息（streaming 中构建）
@@ -901,6 +903,11 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
             // 重置追踪状态
             _currentAssistantMsg = null;
             _lastToolCallId = null;
+            _reasoningText = '';
+            // 更新 token 计数显示
+            if (event.reasoning_per_turn) {
+              updateTokenDisplay(event.reasoning_per_turn);
+            }
             break;
           case 'plan':
             // ── Plan 模式：渲染计划供用户审批 ──
@@ -915,6 +922,646 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
             break;
           case 'plan_execute_done':
             // Plan 执行完成，后续正常流式对话
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            var reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              var bubble = msgEl.querySelector('.bubble');
+              if (bubble) bubble.insertBefore(reasoningDiv, bubble.firstChild);
+            }
+            var pre = reasoningDiv.querySelector('pre');
+            if (pre) pre.textContent = _reasoningText;
+            var summary = reasoningDiv.querySelector('summary');
+            if (summary) summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)';
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            let reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              let bubble = msgEl.querySelector('.bubble');
+              if (bubble) { bubble.insertBefore(reasoningDiv, bubble.firstChild); }
+            }
+            let pre = reasoningDiv.querySelector('pre');
+            if (pre) { pre.textContent = _reasoningText; }
+            let summary = reasoningDiv.querySelector('summary');
+            if (summary) { summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)'; }
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            let reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              let bubble = msgEl.querySelector('.bubble');
+              if (bubble) { bubble.insertBefore(reasoningDiv, bubble.firstChild); }
+            }
+            let pre = reasoningDiv.querySelector('pre');
+            if (pre) { pre.textContent = _reasoningText; }
+            let summary = reasoningDiv.querySelector('summary');
+            if (summary) { summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)'; }
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            let reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              let bubble = msgEl.querySelector('.bubble');
+              if (bubble) { bubble.insertBefore(reasoningDiv, bubble.firstChild); }
+            }
+            let pre = reasoningDiv.querySelector('pre');
+            if (pre) { pre.textContent = _reasoningText; }
+            let summary = reasoningDiv.querySelector('summary');
+            if (summary) { summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)'; }
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            let reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              let bubble = msgEl.querySelector('.bubble');
+              if (bubble) { bubble.insertBefore(reasoningDiv, bubble.firstChild); }
+            }
+            let pre = reasoningDiv.querySelector('pre');
+            if (pre) { pre.textContent = _reasoningText; }
+            let summary = reasoningDiv.querySelector('summary');
+            if (summary) { summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)'; }
+            break;
+          case 'reasoning':
+            // Reasoning content (model thinking process)
+            if (!_currentAssistantMsg) {
+              _currentAssistantMsg = { role: 'assistant', content: '' };
+              _fullMessages.push(_currentAssistantMsg);
+            }
+            _reasoningText += event.content;
+            let reasoningDiv = msgEl.querySelector('.reasoning-block');
+            if (!reasoningDiv) {
+              reasoningDiv = document.createElement('div');
+              reasoningDiv.className = 'reasoning-block';
+              reasoningDiv.innerHTML = '<details><summary>Thinking...</summary><pre class="reasoning-text"></pre></details>';
+              let bubble = msgEl.querySelector('.bubble');
+              if (bubble) { bubble.insertBefore(reasoningDiv, bubble.firstChild); }
+            }
+            let pre = reasoningDiv.querySelector('pre');
+            if (pre) { pre.textContent = _reasoningText; }
+            let summary = reasoningDiv.querySelector('summary');
+            if (summary) { summary.textContent = 'Thinking... (' + _reasoningText.length + ' chars)'; }
             break;
           case 'review':
             // ── 自我进化 Review 事件 ──
@@ -952,6 +1599,454 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
 // ──────────────────────────────────────────────────────────────────────────────
 // Markdown 渲染
 // ──────────────────────────────────────────────────────────────────────────────
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  var tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    var inputArea = document.querySelector('.input-area');
+    if (inputArea) inputArea.appendChild(tokenEl);
+  }
+  var total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  let tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    let inputArea = document.querySelector('.input-area');
+    if (inputArea) { inputArea.appendChild(tokenEl); }
+  }
+  let total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  let tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    let inputArea = document.querySelector('.input-area');
+    if (inputArea) { inputArea.appendChild(tokenEl); }
+  }
+  let total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  let tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    let inputArea = document.querySelector('.input-area');
+    if (inputArea) { inputArea.appendChild(tokenEl); }
+  }
+  let total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  let tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    let inputArea = document.querySelector('.input-area');
+    if (inputArea) { inputArea.appendChild(tokenEl); }
+  }
+  let total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
+function updateTokenDisplay(reasoningPerTurn) {
+  // 更新 token 计数显示（在输入框下方）
+  let tokenEl = document.getElementById('token-count');
+  if (!tokenEl) {
+    tokenEl = document.createElement('div');
+    tokenEl.id = 'token-count';
+    tokenEl.style.cssText = 'font-size:11px;color:#888;margin-top:4px;';
+    let inputArea = document.querySelector('.input-area');
+    if (inputArea) { inputArea.appendChild(tokenEl); }
+  }
+  let total = reasoningPerTurn.reduce(function(a, b) { return a + b; }, 0);
+  tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
+}
+
 function renderMarkdown(text) {
   let html = esc(text);
   // Code blocks

@@ -824,6 +824,51 @@
       "vendor_id": "",
       "model": "",
       "env": {}
+    },
+    {
+      "id": "a7342c7a",
+      "name": "API测试",
+      "description": "",
+      "schedule": "0 9 * * *",
+      "command": "echo morning",
+      "enabled": true,
+      "created_at": "2026-06-03T11:24:26.140044+00:00",
+      "last_run": null,
+      "run_count": 0,
+      "use_agent": false,
+      "vendor_id": "",
+      "model": "",
+      "env": {}
+    },
+    {
+      "id": "7b82fa13",
+      "name": "get_test",
+      "description": "",
+      "schedule": "0 * * * *",
+      "command": "echo get",
+      "enabled": true,
+      "created_at": "2026-06-03T11:24:26.149584+00:00",
+      "last_run": null,
+      "run_count": 0,
+      "use_agent": true,
+      "vendor_id": "",
+      "model": "",
+      "env": {}
+    },
+    {
+      "id": "4f2b2860",
+      "name": "API测试",
+      "description": "",
+      "schedule": "0 9 * * *",
+      "command": "echo morning",
+      "enabled": true,
+      "created_at": "2026-06-03T11:24:26.181708+00:00",
+      "last_run": null,
+      "run_count": 0,
+      "use_agent": false,
+      "vendor_id": "",
+      "model": "",
+      "env": {}
     }
   ]
 }
