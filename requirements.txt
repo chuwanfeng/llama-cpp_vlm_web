@@ -1,8 +1,14 @@
 # ── Web 服务（两个后端共用）───────────────────────────
 flask>=3.0.0
 flask-cors>=4.0.0
+gunicorn>=21.0.0
 requests>=2.31.0
 pillow>=10.0.0
+
+# ── 数据库 ───────────────────────────────────────────
+# 生产环境使用 PostgreSQL（可选）
+# psycopg2-binary>=2.9.0
+aiosqlite>=0.20.0  # 异步 SQLite
 
 # ── GPU 模式需要（llama-cpp-python + ComfyUI 兼容）──
 # GPU 机器上 pip install 这些，然后启动 python app.py

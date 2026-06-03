@@ -38,7 +38,7 @@ def search_ddg(query):
 def search_bing(query):
     """Bing 搜索（cn.bing.com）"""
     log.info("Bing 搜索: %s", query)
-    url = f"https://cn.bing.com/search?q={quote(query)}&setlang=zh-cn"
+    url = f"https://cn.bing.com/search?q={quote(query)}&setlang=zh-cn&mkt=zh-CN"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Accept-Language": "zh-CN,zh;q=0.9",
@@ -50,11 +50,22 @@ def search_bing(query):
         results = []
         blocks = re.findall(r'<li class="b_algo"[^>]*>(.*?)</li>', resp.text, re.DOTALL)
         for block in blocks:
-            h2m = re.search(r'<h2[^>]*>\s*<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, re.DOTALL)
-            if not h2m:
+            # 解析标题和URL: h2内多<a>标签, 跳过r.bing.com/Javascript跟踪链接
+            h2_block = re.search(r'<h2[^>]*>(.*?)</h2>', block, re.DOTALL)
+            if not h2_block:
                 continue
-            url = h2m.group(1)
-            title = re.sub(r"<[^>]+>", "", h2m.group(2)).strip()
+            all_as = re.findall(
+                r'<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+                h2_block.group(1), re.DOTALL
+            )
+            url = ""
+            title = ""
+            for href, a_title in all_as:
+                if 'r.bing.com' in href or 'javascript:' in href:
+                    continue
+                url = href
+                title = re.sub(r"<[^>]+>", "", a_title).strip()
+                break
             if not url or not title:
                 continue
             snippet = title
@@ -72,3 +83,10 @@ def search_bing(query):
     except Exception as e:
         log.warning("Bing 搜索失败: %s", e)
         return []
+def search(query, max_results=5):
+    """统一搜索入口：Bing 优先，失败降级 DDG"""
+    results = search_bing(query)
+    if results:
+        return results[:max_results]
+    log.info("Bing 无结果，尝试 DDG: %s", query)
+    return search_ddg(query)[:max_results]

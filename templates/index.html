@@ -19,7 +19,6 @@
       <select class="m-sel" id="bk-sel" onchange="switchBackend(this.value)">
         <optgroup label="本地">
           <option value="llama-cpp">llama-cpp</option>
-          <option value="ollama">Ollama</option>
         </optgroup>
         <optgroup label="厂商 API">
           <option value="openai">OpenAI</option>
@@ -54,10 +53,46 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
         模板
       </div>
+      <div class="nav" data-n="skills" onclick="nav('skills')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        技能
+      </div>
+      <div class="nav" data-n="cron" onclick="nav('cron')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        定时任务
+      </div>
+      <div class="nav" data-n="plugins" onclick="nav('plugins')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        插件
+      </div>
+      <div class="nav" data-n="api-docs" onclick="nav('api-docs')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+        API 文档
+      </div>
+      <div class="nav" data-n="help" onclick="nav('help')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg>
+        帮助
+      </div>
+      <div class="nav" data-n="monitor" onclick="nav('monitor')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        监控
+      </div>
+      <div class="nav" data-n="approval-page" onclick="nav('approval-page')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        审批
+      </div>
+      <div class="nav" data-n="logs" onclick="nav('logs')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+        日志
+      </div>
       <div class="nav" data-n="settings" onclick="nav('settings')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"/></svg>
         设置
       </div>
+    </div>
+    <div class="sb-sec" id="session-section">
+      <h3>历史会话</h3>
+      <div id="session-list"></div>
     </div>
     <div style="flex:1"></div>
     <div class="st-row">
@@ -94,6 +129,7 @@
           <div class="in-acts">
             <button class="abtn" onclick="document.getElementById('fi').click()" title="附件">📎</button>
             <button class="wbtn" id="wbtn" onclick="toggleWebSearch()" title="联网搜索">🌐</button>
+            <button class="wbtn" id="pbtn" onclick="togglePlanMode()" title="Plan 模式">📋</button>
             <button class="abtn" onclick="webSearch()" title="Web搜索">🔍</button>
             <button class="abtn" id="stbtn" onclick="stopGen()" style="display:none" title="停止生成">■</button>
           <button class="sbtn" id="sbtn" onclick="send()">↑</button>
@@ -134,6 +170,195 @@
       </div>
     </div>
 
+    <!-- Skills -->
+    <div class="panel" id="p-skills">
+      <div class="skill-panel">
+        <div class="skill-list">
+          <h3>技能列表 <button onclick="newSkill()">+ 新建</button></h3>
+          <div id="skills-list"></div>
+        </div>
+        <div class="skill-ed" id="skill-ed">
+          <p style="color:var(--muted);text-align:center;margin-top:80px">选择技能进行编辑，或新建技能</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cron -->
+    <div class="panel" id="p-cron">
+      <div class="cron-panel">
+        <div class="cron-header">
+          <h2>⏰ 定时任务</h2>
+          <button class="btn pri" onclick="showCronForm()">+ 新建任务</button>
+          <button class="btn" onclick="loadCronJobs()">刷新</button>
+        </div>
+        <div class="cron-form hid" id="cron-form">
+          <div class="s-row"><label>名称</label><input type="text" id="cron-name" placeholder="任务名称..."></div>
+          <div class="s-row"><label>Cron 表达式</label><input type="text" id="cron-expr" placeholder="*/5 * * * * (每5分钟)"></div>
+          <div class="s-row"><label>处理器类型</label>
+            <select id="cron-handler">
+              <option value="agent_chat">Agent 对话</option>
+              <option value="http_request">HTTP 请求</option>
+              <option value="shell_command">Shell 命令</option>
+            </select>
+          </div>
+          <div class="s-row"><label>参数 (JSON)</label><textarea id="cron-args" rows="3" placeholder='{"prompt": "检查邮件"}'></textarea></div>
+          <div class="s-row"><label>启用</label><label class="toggle-lbl"><input type="checkbox" id="cron-enabled" checked><span class="toggle-slider"></span></label></div>
+          <div class="s-actions">
+            <button class="btn pri" onclick="createCronJob()">保存</button>
+            <button class="btn" onclick="hideCronForm()">取消</button>
+          </div>
+        </div>
+        <div id="cron-list"></div>
+      </div>
+    </div>
+
+    <!-- Plugins -->
+    <div class="panel" id="p-plugins">
+      <div class="plugin-panel">
+        <div class="plugin-header">
+          <h2>🔌 插件管理</h2>
+          <button class="btn" onclick="loadPlugins()">刷新</button>
+          <button class="btn" onclick="discoverPlugins()">发现插件</button>
+        </div>
+        <div id="plugin-list"></div>
+      </div>
+    </div>
+
+    <!-- API Docs -->
+    <div class="panel" id="p-api-docs">
+      <div class="api-panel">
+        <div class="api-header">
+          <h2>📚 API 文档</h2>
+          <div class="api-filter">
+            <input type="text" id="api-search" placeholder="搜索 API..." oninput="filterAPI(this.value)">
+            <select id="api-cat" onchange="filterAPICategory(this.value)">
+              <option value="">全部</option>
+              <option value="chat">聊天</option>
+              <option value="skills">技能</option>
+              <option value="processes">进程</option>
+              <option value="approval">审批</option>
+              <option value="cron">定时任务</option>
+              <option value="plugins">插件</option>
+              <option value="memory">记忆</option>
+              <option value="system">系统</option>
+            </select>
+          </div>
+        </div>
+        <div class="api-content" id="api-content">
+          <div class="api-loading">加载中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help -->
+    <div class="panel" id="p-help">
+      <div class="help-panel">
+        <div class="help-header">
+          <h2>❓ 使用帮助</h2>
+        </div>
+        <div class="help-content">
+          <div class="help-section">
+            <h3>🚀 快速开始</h3>
+            <ol>
+              <li><strong>选择后端</strong> — 在侧边栏选择 llama-cpp（本地）或厂商 API（OpenAI/DeepSeek 等）</li>
+              <li><strong>选择模型</strong> — 选择要使用的具体模型</li>
+              <li><strong>开始对话</strong> — 输入消息，按 Enter 发送</li>
+              <li><strong>使用工具</strong> — 在设置中启用工具调用，Agent 会自动使用工具</li>
+            </ol>
+          </div>
+          <div class="help-section">
+            <h3>💡 高级功能</h3>
+            <ul>
+              <li><strong>Plan 模式</strong> — 点击 📋 按钮，Agent 会先制定计划再执行</li>
+              <li><strong>联网搜索</strong> — 点击 🌐 按钮，Agent 可搜索互联网信息</li>
+              <li><strong>文件上传</strong> — 点击 📎 按钮上传图片或文本文件</li>
+              <li><strong>模板</strong> — 保存常用提示词，快速调用</li>
+              <li><strong>技能</strong> — 创建自定义技能，扩展 Agent 能力</li>
+            </ul>
+          </div>
+          <div class="help-section">
+            <h3>🔧 工具调用</h3>
+            <p>启用工具后，Agent 可以：</p>
+            <ul>
+              <li>读取和编辑文件</li>
+              <li>执行终端命令（需审批）</li>
+              <li>搜索网络信息</li>
+              <li>浏览网页</li>
+              <li>管理进程</li>
+            </ul>
+            <p class="help-note">⚠️ 危险操作需要审批，可在设置中查看审批队列。</p>
+          </div>
+          <div class="help-section">
+            <h3>⚙️ 设置说明</h3>
+            <ul>
+              <li><strong>Temperature</strong> — 创造性 vs 确定性（0=保守，2=随机）</li>
+              <li><strong>Max Tokens</strong> — 单次回复最大长度</li>
+              <li><strong>辅助模型</strong> — 用于压缩/记忆等杂活，节省主模型 token</li>
+              <li><strong>YOLO 模式</strong> — 跳过所有审批（谨慎使用）</li>
+            </ul>
+          </div>
+          <div class="help-section">
+            <h3>⌨️ 快捷键</h3>
+            <ul>
+              <li><kbd>Enter</kbd> — 发送消息</li>
+              <li><kbd>Shift + Enter</kbd> — 换行</li>
+              <li><kbd>Ctrl + /</kbd> — 聚焦输入框</li>
+              <li><kbd>Esc</kbd> — 停止生成</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Monitor -->
+    <div class="panel" id="p-monitor">
+      <div class="monitor-panel">
+        <div class="monitor-header">
+          <h2>📊 状态监控</h2>
+          <button class="monitor-refresh" onclick="loadMonitorData()">🔄 刷新</button>
+        </div>
+        <div class="monitor-content" id="monitor-content">
+          <div class="api-loading">加载中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Approval Page -->
+    <div class="panel" id="p-approval-page">
+      <div class="approval-panel">
+        <div class="approval-header">
+          <h2>🔐 审批管理</h2>
+          <button class="btn pri" onclick="loadApprovalPage()">🔄 刷新</button>
+        </div>
+        <div class="approval-page-content" id="approval-page-content">
+          <div class="api-loading">加载中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="panel" id="p-logs">
+      <div class="log-panel">
+        <div class="log-header">
+          <h2>📋 日志查看器</h2>
+          <div class="log-controls">
+            <select onchange="setLogLevel(this.value)">
+              <option value="all">全部级别</option>
+              <option value="debug">Debug</option>
+              <option value="info">Info</option>
+              <option value="warn">Warn</option>
+              <option value="error">Error</option>
+            </select>
+            <button onclick="loadLogs()">🔄 刷新</button>
+            <button onclick="clearLogs()">🗑️ 清空</button>
+          </div>
+        </div>
+        <div class="log-content" id="log-content">
+          <div style="color:var(--muted);text-align:center;padding:40px">加载中...</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings -->
     <div class="panel" id="p-settings">
       <div class="set-panel">
@@ -144,13 +369,97 @@
           <div class="s-row"><label>Base URL</label><input type="text" id="set-base-url" placeholder="Base URL（可选）" onchange="onVendorCredChanged()"></div>
         </div>
         <!-- 推理参数 -->
+        <div class="set-sec" id="set-aux">
+          <h2>🤖 辅助模型 <span class="s-hint">(处理压缩/记忆等杂活, 省 token)</span></h2>
+          <div class="s-row"><label>启用</label><label class="toggle-lbl"><input type="checkbox" id="aux-enabled" onchange="onAuxChange()"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>厂商</label><select id="aux-provider" onchange="onAuxProviderChange()"><option value="">跟随主模型</option></select></div>
+          <div class="s-row"><label>模型</label><input type="text" id="aux-model" placeholder="模型名 (留空用默认)" onchange="onAuxChange()"></div>
+          <div class="s-row"><label>任务</label>
+            <div class="cb-group">
+              <label class="cb-lbl"><input type="checkbox" value="compression" class="aux-task" onchange="onAuxChange()"> 上下文压缩</label>
+              <label class="cb-lbl"><input type="checkbox" value="memory" class="aux-task" onchange="onAuxChange()"> 记忆分析</label>
+              <label class="cb-lbl"><input type="checkbox" value="search" class="aux-task" onchange="onAuxChange()"> 搜索摘要</label>
+            </div>
+          </div>
+          <div id="aux-status" class="aux-stats" style="display:none"></div>
+        </div>
         <div class="set-sec">
           <h2>推理参数</h2>
           <div class="s-row"><label>Temperature</label><input type="range" id="s-temp" min="0" max="2" step=".1" value=".7" oninput="us('temp')"><span class="s-val" id="v-temp">0.7</span></div>
           <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max" min="256" max="8192" step="256" value="4096" oninput="us('max')"><span class="s-val" id="v-max">4096</span></div>
           <div class="s-row"><label>Top P</label><input type="range" id="s-topp" min="0" max="1" step=".05" value=".9" oninput="us('topp')"><span class="s-val" id="v-topp">0.9</span></div>
         </div>
+        <!-- 工具调用 -->
+        <div class="set-sec">
+          <h2>🔧 工具调用</h2>
+          <div class="s-row"><label>启用</label><label class="toggle-lbl"><input type="checkbox" id="tools-enabled" onchange="onToolsChange()"><span class="toggle-slider"></span></label></div>
+          <div id="tools-status" class="s-val" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
+        </div>
         <div class="s-actions"><button class="s-save" onclick="saveSettings()">💾 保存设置</button><span class="s-msg" id="s-msg"></span></div>
+
+        <!-- 记忆管理 -->
+        <div class="set-sec" id="set-memory">
+          <h2>🧠 记忆管理</h2>
+          <div class="mem-panel">
+            <div class="mem-add">
+              <input type="text" id="mem-key" placeholder="键名...">
+              <input type="text" id="mem-val" placeholder="值...">
+              <button onclick="saveMemoryItem()">保存</button>
+            </div>
+            <div id="memory-list"></div>
+          </div>
+        </div>
+
+        <!-- 技能管理 -->
+        <div class="set-sec" id="set-skills">
+          <h2>🎯 技能管理</h2>
+          <div class="skill-panel">
+            <div class="skill-add">
+              <input type="text" id="skill-name" placeholder="技能名称...">
+              <input type="text" id="skill-desc" placeholder="描述...">
+              <button onclick="createSkill()">创建</button>
+            </div>
+            <div id="skill-list"></div>
+          </div>
+        </div>
+
+        <!-- 审批流 -->
+        <div class="set-sec" id="set-approval">
+          <h2>🔐 审批流</h2>
+          <div class="ap-panel">
+            <div class="ap-header">
+              <button onclick="loadPendingApprovals()">刷新</button>
+              <label class="toggle-lbl">
+                <input type="checkbox" id="yolo-mode" onchange="toggleYOLO()">
+                <span class="toggle-slider"></span> YOLO 模式
+              </label>
+            </div>
+            <div id="approval-list"></div>
+          </div>
+        </div>
+
+        <!-- 进程管理 -->
+        <div class="set-sec" id="set-process">
+          <h2>⚙️ 进程管理</h2>
+          <div class="proc-panel">
+            <div class="proc-header">
+              <button onclick="loadProcessList()">刷新</button>
+            </div>
+            <div id="process-list"></div>
+          </div>
+        </div>
+
+        <!-- 全文搜索 -->
+        <div class="set-sec" id="set-search">
+          <h2>🔍 全文搜索</h2>
+          <div class="sr-panel">
+            <div class="sr-input">
+              <input type="text" id="sr-query" placeholder="搜索对话内容..." onkeydown="if(event.key==='Enter')doSearch(document.getElementById('sr-query').value)">
+              <button onclick="doSearch(document.getElementById('sr-query').value)">搜索</button>
+            </div>
+            <div id="search-results"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

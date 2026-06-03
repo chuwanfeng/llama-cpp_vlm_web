@@ -1,0 +1,50 @@
+# .dockerignore
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# 虚拟环境
+venv
+env
+ENV
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 测试
+.pytest_cache
+.coverage
+htmlcov
+
+# 数据（通过 volume 挂载）
+data/
+*.db
+*.sqlite
+
+# 日志
+logs/
+*.log
+
+# 文档
+*.md
+!README.md
+
+# 其他
+.DS_Store
+Thumbs.db

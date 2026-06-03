@@ -5,14 +5,10 @@ import os
 
 # ─── 基础路径 ────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = BASE_DIR  # 项目根目录别名，供各模块统一使用
 # MODELS_DIR = os.environ.get("MODELS_DIR", os.path.join(BASE_DIR, "models"))
 MODELS_DIR = r"D:\Scoop\LLM"
 os.makedirs(MODELS_DIR, exist_ok=True)
-
-# ─── Ollama ──────────────────────────────────────────────────────────────────
-OLLAMA_BASE = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
-OLLAMA_TIMEOUT = 120  # 秒
-OLLAMA_STREAM_TIMEOUT = 300  # 秒
 
 # ─── GPU (llama-cpp-python) ──────────────────────────────────────────────────
 GPU_DEFAULT_CTX = 8192

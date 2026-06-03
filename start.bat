@@ -12,6 +12,6 @@ echo Starting Llama-cpp VLM Web on port %PORT%...
 echo Open http://localhost:%PORT% in your browser
 echo.
 
-python app.py %PORT%
+python main.py %PORT%
 
 pause

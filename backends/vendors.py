@@ -227,20 +227,22 @@ def chat_stream(vendor_id: str, model: str, messages: list,
     if not base_url:
         base_url = vdef.get("base_url", "")
 
-    # Enable vendor built-in search (Zhipu/DeepSeek/Moonshot)
+    # Enable vendor built-in search (Zhipu/Moonshot: tool injection; DeepSeek: extra_body)
     # NOTE: skip injection when tools=None (caller explicitly wants no tools)
     _SEARCH_VENDORS = {"zhipu", "moonshot"}
-    if vendor_id in _SEARCH_VENDORS:
-        _tools = params.get("tools")
-        if _tools is None:
-            pass  # tools=None means caller doesn't want tools (e.g. summary gen)
-        else:
-            if not _tools:
-                _tools = []
-            _has = any(t.get("type") == "web_search" for t in _tools)
-            if not _has:
-                _tools.append({"type": "web_search", "web_search": {"enable": True, "search_result": True}})
-                params["tools"] = _tools
+    web_search = params.pop("web_search", False)  # 从参数中取出联网搜索开关
+    _tools = params.get("tools")
+    if web_search and _tools is not None:
+        if not _tools:
+            _tools = []
+        _has = any(t.get("type") == "web_search" for t in _tools)
+        if not _has:
+            _tools.append({"type": "web_search", "web_search": {"enable": True, "search_result": True}})
+            params["tools"] = _tools
+
+    # DeepSeek uses enable_search extra_body, not tool injection
+    if vendor_id == "deepseek" and web_search:
+        params["enable_search"] = True
 
     if transport == "anthropic_messages":
         yield from _anthropic_stream(model, messages, api_key, base_url, vdef, **params)
@@ -283,6 +285,14 @@ def _openai_stream(model: str, messages: list, api_key: str, base_url: str,
     if tools:
         create_kwargs["tools"] = tools
         create_kwargs["tool_choice"] = tool_choice
+        _tnames = [t.get("function", {}).get("name", "?") for t in tools]
+        log.info("vendors._openai_stream: tools=%d 个, 含 delegate_task=%s", len(tools), "delegate_task" in _tnames)
+
+    # DeepSeek 内置搜索: 通过 extra_body 传递 enable_search 参数
+    if params.get("enable_search"):
+        eb = create_kwargs.get("extra_body", {})
+        eb["enable_search"] = True
+        create_kwargs["extra_body"] = eb
 
     stream = client.chat.completions.create(**create_kwargs)
 

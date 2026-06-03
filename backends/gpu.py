@@ -6,11 +6,11 @@ import gc
 import json
 import base64
 import io
-import logging
 import traceback
 from threading import Lock
 
-log = logging.getLogger(__name__)
+from utils import get_logger
+log = get_logger("backends.gpu")
 
 import torch
 import numpy as np
@@ -274,13 +274,14 @@ def _img_to_bytes(img_data):
     raise ValueError(f"不支持的图片格式: {type(img_data)}")
 
 
-def infer(prompt, images=None, system=None, stream=False, **params):
+def infer(prompt=None, messages=None, images=None, system=None, stream=False, **params):
     """推理（支持流式输出）
     
     Args:
-        prompt: 用户输入
+        prompt: 用户输入（单条消息，与 messages 二选一）
+        messages: 多轮对话历史 [{role, content}, ...]，优先使用
         images: 图片列表
-        system: 系统提示
+        system: 系统提示（会被加到 messages 最前面）
         stream: 是否流式输出
         **params: 其他参数
     
@@ -291,50 +292,100 @@ def infer(prompt, images=None, system=None, stream=False, **params):
     if _model is None:
         raise RuntimeError("模型未加载")
 
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
+    chat_messages = []
 
-    # 多模态消息
-    if images:
-        content = [{"type": "text", "text": prompt}]
-        for img in images:
-            img_bytes = _img_to_bytes(img)
-            b64 = base64.b64encode(img_bytes).decode("utf-8")
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{b64}"}
-            })
-        messages.append({"role": "user", "content": content})
+    # 如果有 messages 数组（多轮对话），直接使用
+    if messages:
+        chat_messages = list(messages)  # 浅拷贝
+        # system 插入到最前面（如果提供了 system 且 messages 第一条不是 system）
+        if system and (not chat_messages or chat_messages[0].get("role") != "system"):
+            chat_messages.insert(0, {"role": "system", "content": system})
     else:
-        messages.append({"role": "user", "content": prompt})
+        # 单条 prompt 模式（向后兼容）
+        if system:
+            chat_messages.append({"role": "system", "content": system})
+
+        # 多模态消息
+        if images:
+            content = [{"type": "text", "text": prompt or ""}]
+            for img in images:
+                img_bytes = _img_to_bytes(img)
+                b64 = base64.b64encode(img_bytes).decode("utf-8")
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}"}
+                })
+            chat_messages.append({"role": "user", "content": content})
+        else:
+            chat_messages.append({"role": "user", "content": prompt or ""})
 
     # 优化参数：增加批处理、降低温度提高确定性
     gen_params = {
-        "max_tokens": params.get("max_tokens", GPU_DEFAULT_MAX_TOKENS),
-        "temperature": params.get("temperature", DEFAULT_TEMPERATURE),
-        "top_p": params.get("top_p", DEFAULT_TOP_P),
-        "top_k": params.get("top_k", DEFAULT_TOP_K),
-        "repeat_penalty": params.get("repeat_penalty", DEFAULT_REPEAT_PENALTY),
+        "max_tokens": params.get("max_tokens") or GPU_DEFAULT_MAX_TOKENS,
+        "temperature": params.get("temperature") or DEFAULT_TEMPERATURE,
+        "top_p": params.get("top_p") or DEFAULT_TOP_P,
+        "top_k": params.get("top_k") or DEFAULT_TOP_K,
+        "repeat_penalty": params.get("repeat_penalty") or DEFAULT_REPEAT_PENALTY,
         "stream": stream,
     }
     
+    # 提取 tools 参数（llama-cpp-python 需要显式传，否则 Qwen 模板渲染会炸）
+    tools = params.get("tools", [])
+    
+    # 【最终防线】转换 chat_messages 中所有 tool_calls 的 arguments
+    # 前端 JSON 序列化会把 dict 变回 string，Qwen 模板 |items 要求 mapping
+    # 不管消息从哪来（app.py 直调 / loop.py / 前端 SSE），这里统一兜底
+    for msg in chat_messages:
+        if isinstance(msg, dict) and msg.get("role") == "assistant":
+            for tc in msg.get("tool_calls") or []:
+                func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                args = func.get("arguments")
+                if isinstance(args, str):
+                    import json
+                    try:
+                        func["arguments"] = json.loads(args)
+                    except (json.JSONDecodeError, TypeError):
+                        func["arguments"] = {}
+
+    # DEBUG: 打印 messages 内容以便排查 Jinja2 模板报错
+    log.warning("[DEBUG infer] messages=%s tools=%s", 
+                [(m.get('role'), type(m.get('content')).__name__, 
+                  len(str(m.get('content',''))) if m.get('content') else 0,
+                  list(m.keys()) if isinstance(m, dict) else type(m).__name__)
+                 for m in chat_messages],
+                len(tools) if tools else 0)
+
+    # DEBUG: 打印 tool_calls 里 arguments 的实际类型
+    for m in chat_messages:
+        if isinstance(m, dict) and m.get("role") == "assistant":
+            for tc_idx, tc in enumerate(m.get("tool_calls") or []):
+                func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                args = func.get("arguments")
+                log.warning("[DEBUG tool_calls] msg[%s] tc[%s] arguments type=%s repr=%s",
+                            m.get("role"), tc_idx, type(args).__name__,
+                            repr(args)[:200])
+    
     # CPU 模式优化：降低 top_k 和温度
     if not HAVE_GPU:
-        gen_params["top_k"] = min(gen_params.get("top_k", 40), 20)
-        gen_params["temperature"] = max(gen_params["temperature"], 0.5)
+        gen_params["top_k"] = min(gen_params.get("top_k") or 40, 20)
+        gen_params["temperature"] = max(gen_params.get("temperature") or 0.7, 0.5)
     
     if stream:
         def generate():
-            for chunk in _model.create_chat_completion(messages=messages, **gen_params):
+            for chunk in _model.create_chat_completion(messages=chat_messages, tools=tools, **gen_params):
                 if "choices" in chunk and len(chunk["choices"]) > 0:
                     delta = chunk["choices"][0].get("delta", {})
                     content = delta.get("content", "")
+                    reasoning = delta.get("reasoning_content", "")
+                    # Qwen think 模式: enable_thinking=True 时思考内容通过
+                    # reasoning_content 输出，需一并送入 content 通道
+                    if reasoning:
+                        yield reasoning
                     if content:
                         yield content
         return generate()
     else:
-        response = _model.create_chat_completion(messages=messages, **gen_params)
+        response = _model.create_chat_completion(messages=chat_messages, tools=tools, **gen_params)
         return response["choices"][0]["message"]["content"]
 
 
