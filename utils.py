@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import time
 from contextlib import contextmanager
@@ -26,12 +27,28 @@ def setup_logging(level: str = "INFO", name: str = "llm-web") -> logging.Logger:
     global _LOGGING_INITIALIZED
     if _LOGGING_INITIALIZED:
         return logging.getLogger(name)
-    
+
+    from logging.handlers import RotatingFileHandler
+    from pathlib import Path
+
+    log_fmt = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    handlers = [logging.StreamHandler(sys.stdout)]
+
+    # 文件日志（供 /api/logs 读取）
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / "app.log"
+    fh = RotatingFileHandler(str(log_file), maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    fh.setFormatter(log_fmt)
+    handlers.append(fh)
+
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
-        datefmt="%H:%M:%S",
-        handlers=[logging.StreamHandler(sys.stdout)],
+        handlers=handlers,
     )
     _LOGGING_INITIALIZED = True
     return logging.getLogger(name)
@@ -99,7 +116,7 @@ def read_json(path: Union[str, Path], default: Any = None) -> Any:
 
 
 def write_json(path: Union[str, Path], data: Any, indent: int = 2) -> bool:
-    """安全写入 JSON 文件
+    """安全原子写入 JSON 文件
     
     Args:
         path: 文件路径
@@ -109,11 +126,19 @@ def write_json(path: Union[str, Path], data: Any, indent: int = 2) -> bool:
     Returns:
         True 成功，False 失败
     """
+    import tempfile
     path = Path(path)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=indent, ensure_ascii=False)
+        # 原子写入：先写临时文件，再 rename（避免 read_json 读到半截内容）
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix='.settings', suffix='.tmp')
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=indent, ensure_ascii=False)
+            os.replace(tmp, path)  # 原子替换（Windows 上原子性稍弱但远好于直接覆写）
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
         return True
     except (TypeError, OSError) as e:
         log.error("写入 JSON 失败 %s: %s", path, e)

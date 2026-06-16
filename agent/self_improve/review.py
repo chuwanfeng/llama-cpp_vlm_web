@@ -280,7 +280,8 @@ def run_review_sync(
         limited_schemas = []
         valid_names: Set[str] = set()
         for entry in registry.list_available():
-            if entry.toolset in ("memory", "skills"):
+            # review 代理需要 memory + skills + file（write_file/read_file）工具
+            if entry.toolset in ("memory", "skills", "file"):
                 limited_schemas.append(entry.to_openai_schema())
                 valid_names.add(entry.name)
 

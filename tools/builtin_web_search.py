@@ -22,8 +22,12 @@ from tools.registry import get_registry, tool_result
 
 logger = logging.getLogger(__name__)
 
-# ProSearch 脚本路径（OpenClaw 打包目录中的 skill 脚本）
-_PROSEARCH_SCRIPT = r"D:\Program Files\QClaw\resources\openclaw\config\skills\online-search\scripts\prosearch.cjs"
+# ProSearch 脚本路径 — 优先查找项目内置脚本，其次查找 OpenClaw skill 目录
+import pathlib
+_PROSEARCH_SCRIPT = str(pathlib.Path(__file__).resolve().parent.parent / "scripts" / "prosearch.cjs")
+_PROSEARCH_AVAILABLE = os.path.isfile(_PROSEARCH_SCRIPT)
+if not _PROSEARCH_AVAILABLE:
+    logger.info("ProSearch 脚本不可用，将使用 cn.bing.com 兜底")
 
 
 def _build_search_args(keyword: str, max_results: int = 5, freshness: str | None = None) -> list[str]:
@@ -146,6 +150,10 @@ def web_search(query: str, max_results: int = 5) -> str:
         return tool_result("错误: 搜索关键词不能为空")
     
     query = query.strip()
+    
+    # ProSearch 不可用时直接走通用搜索兜底（跳过无意义的 subprocess 调用）
+    if not _PROSEARCH_AVAILABLE:
+        return _duckduckgo_fallback(query, max_results)
     
     result = _run_prosearch(query, max_results)
     

@@ -17,7 +17,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ def expand_inline_shell(text: str, cwd: Optional[str] = None) -> str:
 def get_skill_commands() -> Dict[str, Dict[str, Any]]:
     """获取所有可用的技能命令。
 
-    扫描 skills/ 目录，为每个 .skill 文件生成一个 /command。
+    扫描 skills/ 目录，为每个 SKILL.md 文件生成一个 /command。
 
     Returns:
         命令名 -> 命令信息的字典
@@ -145,12 +145,25 @@ def get_skill_commands() -> Dict[str, Dict[str, Any]]:
     if _skill_commands:
         return _skill_commands
 
-    # 扫描 skills 目录
+    # 扫描 skills 目录（递归查找 SKILL.md）
     project_root = Path(__file__).resolve().parent.parent.parent
     skills_dir = project_root / "skills"
 
     if not skills_dir.exists():
         return {}
+
+    # 排除目录
+    _excluded = frozenset(
+        (".git", ".github", ".hub", ".archive",
+         "__pycache__", "node_modules", ".venv", "venv", "env")
+    )
+
+    # 递归查找 SKILL.md
+    skill_files: List[Path] = []
+    for root, dirs, files in os.walk(skills_dir, followlinks=True):
+        dirs[:] = [d for d in dirs if d not in _excluded]
+        if "SKILL.md" in files:
+            skill_files.append(Path(root) / "SKILL.md")
 
     # 加载配置（用于禁用列表）
     config = load_skills_config()
@@ -159,8 +172,8 @@ def get_skill_commands() -> Dict[str, Dict[str, Any]]:
     if current_platform and current_platform in platform_disabled:
         disabled_skills.update(platform_disabled[current_platform])
 
-    for skill_file in sorted(skills_dir.glob("*.skill")):
-        name = skill_file.stem
+    for skill_file in sorted(skill_files, key=lambda p: str(p.relative_to(skills_dir))):
+        name = skill_file.parent.name
         command_name = _sanitize_skill_command(name)
 
         if command_name in disabled_skills:

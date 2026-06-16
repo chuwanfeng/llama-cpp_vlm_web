@@ -123,6 +123,49 @@ def _get_image_mime_type(image_path: str) -> str:
     return mime_map.get(ext, "image/jpeg")
 
 
+def _call_ollama_vision(model: str, prompt: str, b64_img: str, api_key: str) -> str:
+    """通过 Ollama Cloud 原生 /api/chat 端点调用多模态模型。
+
+    Ollama Cloud 的 OpenAI 兼容端点 (/v1/chat/completions) 不支持 image_url，
+    必须走原生 /api/chat，将 images 放在 message 内部（非请求顶层）。
+
+    参数：
+        model: 模型名（如 gemma4:31b-cloud）
+        prompt: 用户提示词
+        b64_img: base64 编码的图片数据
+        api_key: Ollama API Key
+
+    返回：
+        JSON 字符串（含 answer 或 error）
+    """
+    try:
+        body = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt, "images": [b64_img]}],
+            "stream": False,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        resp = requests.post(
+            "https://ollama.com/api/chat",
+            json=body,
+            headers=headers,
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data.get("message", {}).get("content", "")
+        return content.strip() or "（模型未返回内容）"
+    except requests.exceptions.HTTPError as e:
+        logger.error("Ollama 视觉 API HTTP 错误: %s, body: %s", e, e.response.text[:500] if e.response else "")
+        return json.dumps({"error": f"Ollama 视觉 API 调用失败: {e}"})
+    except Exception as e:
+        logger.error("Ollama 视觉 API 调用失败: %s", e)
+        return json.dumps({"error": f"Ollama 视觉 API 调用失败: {type(e).__name__}: {str(e)}"})
+
+
 def _call_vision_llm(
     image_path: str,
     prompt: str,
@@ -173,22 +216,55 @@ def _call_vision_llm(
         }
     ]
 
+    # 未指定厂商 → 自动从项目配置中检测（环境变量 + settings.json）
+    if not vendor_id:
+        try:
+            from backends.vendors import _read_api_key, VENDORS
+            # 先读 settings.json 中的凭据
+            settings_creds = {}
+            try:
+                settings_path = os.path.join(os.path.dirname(__file__), "..", "settings.json")
+                settings_path = os.path.normpath(settings_path)
+                if os.path.exists(settings_path):
+                    with open(settings_path, "r", encoding="utf-8") as f:
+                        s = json.load(f)
+                    settings_creds = s.get("vendor_creds", {})
+            except Exception:
+                pass
+            # 视觉优先厂商（ollama-cloud 原生支持、openai/gemini 支持 image_url）
+            vision_priority = ["ollama-cloud", "openai", "gemini"]
+            # 先遍历视觉优先列表，再遍历其余厂商
+            for vid in vision_priority + [v for v in VENDORS if v not in vision_priority]:
+                # 先检查环境变量，再检查 settings.json
+                key = _read_api_key(VENDORS[vid])
+                if not key and vid in settings_creds:
+                    key = settings_creds[vid].get("api_key", "")
+                if key:
+                    vendor_id = vid
+                    api_key = api_key or key
+                    base_url = base_url or settings_creds.get(vid, {}).get("base_url", "")
+                    logger.info("视觉工具自动选择厂商: %s", vid)
+                    break
+        except Exception as e:
+            logger.warning("视觉工具自动检测厂商失败: %s", e)
+
     # 调用厂商 API
     try:
         from backends import vendors
 
+        if not vendor_id:
+            return json.dumps({"error": "视觉工具未配置可用的厂商 API Key，请在设置中配置 OpenAI/DeepSeek/智谱等厂商凭据"})
+
         # 自动选择模型
         if not model:
-            if vendor_id == "openai":
-                model = "gpt-4o"
-            elif vendor_id == "gemini":
-                model = "gemini-2.0-flash"
-            elif vendor_id == "deepseek":
-                model = "deepseek-vision"  # 如果支持
-            else:
-                model = ""  # 让 vendors.chat_stream 自动选择
+            vdef = vendors.VENDORS.get(vendor_id, {})
+            model = vdef.get("default_model", "")
 
-        # 使用 chat_stream 获取完整响应
+        # Ollama Cloud 的 OpenAI 兼容端点不支持 image_url，走原生 /api/chat
+        if vendor_id == "ollama-cloud":
+            return _call_ollama_vision(model, prompt, b64_img, api_key)
+
+        # 其他厂商走统一 chat_stream
         stream = vendors.chat_stream(
             vendor_id=vendor_id,
             model=model,
@@ -256,10 +332,10 @@ def vision_describe(path: str, detail_level: str = "detailed") -> str:
         "detailed": "详细描述这张图片的内容，包括主要物体、颜色、构图、氛围等。",
         "professional": "以专业摄影/艺术分析的视角描述这张图片，包括构图、光影、色彩理论、情感表达等。",
     }
-    prompt = prompts.get(level, prompts["detailed"])
+    prompt = prompts.get(detail_level, prompts["detailed"])
 
     result = _call_vision_llm(path, prompt)
-    return json.dumps({"description": result, "detail_level": level}, ensure_ascii=False)
+    return json.dumps({"description": result, "detail_level": detail_level}, ensure_ascii=False)
 
 
 def vision_compare(path_a: str, path_b: str, focus: str = "general") -> str:

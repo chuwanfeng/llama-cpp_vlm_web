@@ -364,13 +364,13 @@
       <div class="set-panel">
         <!-- 厂商配置 -->
         <div class="set-sec" id="set-vendor" style="display:none">
-          <h2>厂商 API 配置 <span id="set-vendor-name"></span></h2>
+          <h2>☁️ 厂商 API 配置 <span class="s-badge s-badge-vendor">厂商</span> <span id="set-vendor-name"></span></h2>
           <div class="s-row"><label>API Key</label><input type="password" id="set-api-key" placeholder="API Key（留空使用环境变量）" onchange="onVendorCredChanged()"><span class="s-val" id="set-key-status"></span></div>
           <div class="s-row"><label>Base URL</label><input type="text" id="set-base-url" placeholder="Base URL（可选）" onchange="onVendorCredChanged()"></div>
         </div>
-        <!-- 推理参数 -->
+        <!-- 辅助模型 (通用) -->
         <div class="set-sec" id="set-aux">
-          <h2>🤖 辅助模型 <span class="s-hint">(处理压缩/记忆等杂活, 省 token)</span></h2>
+          <h2>🤖 辅助模型 <span class="s-badge s-badge-common">通用</span> <span class="s-hint">(处理压缩/记忆等杂活, 省 token)</span></h2>
           <div class="s-row"><label>启用</label><label class="toggle-lbl"><input type="checkbox" id="aux-enabled" onchange="onAuxChange()"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>厂商</label><select id="aux-provider" onchange="onAuxProviderChange()"><option value="">跟随主模型</option></select></div>
           <div class="s-row"><label>模型</label><input type="text" id="aux-model" placeholder="模型名 (留空用默认)" onchange="onAuxChange()"></div>
@@ -383,17 +383,33 @@
           </div>
           <div id="aux-status" class="aux-stats" style="display:none"></div>
         </div>
-        <div class="set-sec">
-          <h2>推理参数</h2>
-          <div class="s-row"><label>Temperature</label><input type="range" id="s-temp" min="0" max="2" step=".1" value=".7" oninput="us('temp')"><span class="s-val" id="v-temp">0.7</span></div>
-          <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max" min="256" max="8192" step="256" value="4096" oninput="us('max')"><span class="s-val" id="v-max">4096</span></div>
-          <div class="s-row"><label>Top P</label><input type="range" id="s-topp" min="0" max="1" step=".05" value=".9" oninput="us('topp')"><span class="s-val" id="v-topp">0.9</span></div>
+        <!-- 本地推理参数 -->
+        <div class="set-sec" id="set-local-infer">
+          <h2>🖥️ 本地推理参数 <span class="s-badge s-badge-local">本地</span></h2>
+          <div class="s-row"><label>Temperature</label><input type="range" id="s-temp-local" min="0" max="2" step=".1" value=".7" oninput="us('temp','local')"><span class="s-val" id="v-temp-local">0.7</span></div>
+          <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max-local" min="256" max="8192" step="256" value="4096" oninput="us('max','local')"><span class="s-val" id="v-max-local">4096</span></div>
+          <div class="s-row"><label>Top P</label><input type="range" id="s-topp-local" min="0" max="1" step=".05" value=".9" oninput="us('topp','local')"><span class="s-val" id="v-topp-local">0.9</span></div>
+          <div class="s-row"><label>工具调用</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="tools-local-enable" onchange="onToolsChange()"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>计划模式</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="plan-mode-local"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>思考输出</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="think-output-local"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>自动审查</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="auto-review-local"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>最小提示</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="min-prompt-local"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>上下文扩展</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="ctx-ext-local"><span class="toggle-slider"></span></label></div>
+          <div id="tools-status-local" class="s-val" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
         </div>
-        <!-- 工具调用 -->
-        <div class="set-sec">
-          <h2>🔧 工具调用</h2>
-          <div class="s-row"><label>启用</label><label class="toggle-lbl"><input type="checkbox" id="tools-enabled" onchange="onToolsChange()"><span class="toggle-slider"></span></label></div>
-          <div id="tools-status" class="s-val" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
+        <!-- 厂商推理参数 -->
+        <div class="set-sec" id="set-vendor-infer" style="display:none">
+          <h2>☁️ 厂商推理参数 <span class="s-badge s-badge-vendor">厂商</span></h2>
+          <div class="s-row"><label>Temperature</label><input type="range" id="s-temp-vendor" min="0" max="2" step=".1" value=".7" oninput="us('temp','vendor')"><span class="s-val" id="v-temp-vendor">0.7</span></div>
+          <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max-vendor" min="256" max="16384" step="256" value="4096" oninput="us('max','vendor')"><span class="s-val" id="v-max-vendor">4096</span></div>
+          <div class="s-row"><label>Top P</label><input type="range" id="s-topp-vendor" min="0" max="1" step=".05" value=".9" oninput="us('topp','vendor')"><span class="s-val" id="v-topp-vendor">0.9</span></div>
+          <div class="s-row"><label>工具调用</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="tools-vendor-enable" onchange="onToolsChange()"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>计划模式</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="plan-mode-vendor"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>思考输出</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="think-output-vendor"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>自动审查</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="auto-review-vendor"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>最小提示</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="min-prompt-vendor"><span class="toggle-slider"></span></label></div>
+          <div class="s-row"><label>上下文扩展</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="ctx-ext-vendor"><span class="toggle-slider"></span></label></div>
+          <div id="tools-status-vendor" class="s-val" style="margin-top:6px;font-size:12px;color:var(--muted);display:none"></div>
         </div>
         <div class="s-actions"><button class="s-save" onclick="saveSettings()">💾 保存设置</button><span class="s-msg" id="s-msg"></span></div>
 

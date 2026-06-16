@@ -806,7 +806,8 @@ class AgentLoop:
                 if first_token is None:
                     first_token = time.monotonic()
                 if isinstance(chunk, dict):
-                    # gpu.infer() 流式 yield dict: {"content": ..., "reasoning_content": ...}
+                    # gpu.infer() 流式 yield dict: {"content": ..., "reasoning_content": ..., "tool_calls": ...}
+                    # tool_calls 仅 Gemma4 等原生 tool calling 模型提供
                     chunks.append(chunk)
                     if on_token and chunk.get("content"):
                         on_token(chunk["content"])

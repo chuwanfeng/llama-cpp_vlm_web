@@ -29,7 +29,7 @@ def _now_iso() -> str:
 
 # ─── Schema ──────────────────────────────────────────────
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS messages (
     token_count INTEGER,
     finish_reason TEXT,
     reasoning_content TEXT,
+    attachments TEXT,
     timestamp REAL NOT NULL
 );
 
@@ -184,10 +185,18 @@ class SessionStore:
         except sqlite3.OperationalError:
             cursor.executescript(FTS_TRIGRAM_SQL)
 
-        # Schema version
+        # Schema version + migrations
         cursor.execute("SELECT version FROM schema_version LIMIT 1")
         row = cursor.fetchone()
-        if row is None:
+        current_ver = row[0] if row else 0
+        if current_ver < 2:
+            # v1 → v2: add attachments column
+            try:
+                cursor.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            cursor.execute("UPDATE schema_version SET version = 2")
+        elif row is None:
             cursor.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
         self._conn.commit()
 
@@ -265,6 +274,7 @@ class SessionStore:
         token_count: int = None,
         finish_reason: str = None,
         reasoning_content: str = None,
+        attachments: list = None,
     ) -> int:
         """追加消息，返回 message id"""
         # 确保 session 存在
@@ -276,13 +286,14 @@ class SessionStore:
         now = _now_ts()
 
         with self._lock:
+            attachments_json = json.dumps(attachments, ensure_ascii=False) if attachments else None
             cursor = self._conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_name, tool_calls,
-                   tool_call_id, token_count, finish_reason, reasoning_content, timestamp)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   tool_call_id, token_count, finish_reason, reasoning_content, attachments, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id, role, content, tool_name, tool_calls_json,
-                    tool_call_id, token_count, finish_reason, reasoning_content, now,
+                    tool_call_id, token_count, finish_reason, reasoning_content, attachments_json, now,
                 ),
             )
             msg_id = cursor.lastrowid
@@ -309,6 +320,11 @@ class SessionStore:
                     msg["tool_calls"] = json.loads(msg["tool_calls"])
                 except (json.JSONDecodeError, TypeError):
                     msg["tool_calls"] = []
+            if msg.get("attachments"):
+                try:
+                    msg["attachments"] = json.loads(msg["attachments"])
+                except (json.JSONDecodeError, TypeError):
+                    msg["attachments"] = []
             result.append(msg)
         return result
 
@@ -328,6 +344,8 @@ class SessionStore:
                 msg["finish_reason"] = m["finish_reason"]
             if m.get("reasoning_content"):
                 msg["reasoning_content"] = m["reasoning_content"]
+            if m.get("attachments"):
+                msg["attachments"] = m["attachments"]
             conv.append(msg)
         return conv
 

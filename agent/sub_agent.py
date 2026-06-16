@@ -256,11 +256,21 @@ class SubAgent:
         """构建子代理的系统提示词。
 
         让子代理知道自己是子任务执行者，需要专注于指定的目标。
+        明确列出可用工具名称，防止模型调用未提供的工具。
         """
-        tool_list = ", ".join(self.toolsets) if self.toolsets else "通用工具"
+        # 获取具体工具名称列表
+        valid_names = sorted(self._get_valid_tool_names())
+        if valid_names:
+            tool_names_str = ", ".join(valid_names)
+        else:
+            tool_names_str = "（无）"
+
         lines = [
             "你是一个子任务执行代理（Sub-Agent），负责完成指定的子任务。",
-            "可用工具集: " + tool_list,
+            "",
+            "可用工具名称（你只能调用以下工具）:",
+            tool_names_str,
+            "",
             "最大迭代轮数: " + str(self.max_iterations),
             "",
             "规则:",
@@ -268,6 +278,7 @@ class SubAgent:
             "2. 完成后直接给出结论，不要等待进一步指令",
             "3. 如果多次尝试后无法完成，报告失败原因",
             "4. 你的输出将作为父代理的工具调用结果返回",
+            "5. 你只能调用上面列出的工具，调用其他工具会报错",
         ]
         return "\n".join(lines)
 

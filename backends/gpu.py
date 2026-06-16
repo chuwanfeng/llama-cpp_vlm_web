@@ -76,66 +76,151 @@ def _find_mmproj(model_path):
     return None
 
 
-def _get_chat_handler(clip_model_path):
-    """根据 mmproj 路径创建正确的 chat handler
+def _detect_model_family(model_path):
+    """根据模型文件名检测模型家族
     
-    优先级: Qwen3.5 > Qwen2.5 VL > Qwen3 VL > LLaVA 1.6 > LLaVA 1.5 > 通用
+    返回值用于选择正确的 chat handler / chat_format。
+    """
+    name = os.path.basename(model_path).lower()
+    if "gemma-4" in name or "gemma4" in name:
+        return "gemma4"
+    if "gemma-3" in name or "gemma3" in name:
+        return "gemma3"
+    if "qwen3.5" in name or "qwen35" in name:
+        return "qwen35"
+    if "qwen3.6" in name or "qwen36" in name:
+        return "qwen35"  # Qwen3.6 用 Qwen3.5 的 handler
+    if "qwen3" in name:
+        return "qwen3"
+    if "qwen2.5" in name or "qwen25" in name:
+        return "qwen25"
+    if "llama-4" in name or "llama4" in name:
+        return "llama4"
+    if "llava-1.6" in name or "llava16" in name or "llava-v1.6" in name:
+        return "llava16"
+    if "llava-1.5" in name or "llava15" in name or "llava-v1.5" in name:
+        return "llava15"
+    return None
+
+
+def _get_chat_handler(clip_model_path, model_path=None):
+    """根据 mmproj 路径和模型名创建正确的 chat handler
+    
+    优先级: Gemma4 > Gemma3 > Qwen3.5 > Qwen3 VL > Qwen2.5 VL > LLaVA 1.6 > LLaVA 1.5
+    
+    Args:
+        clip_model_path: mmproj 文件路径
+        model_path: 模型文件路径（可选，用于模型家族检测）
     """
     if not clip_model_path or not os.path.exists(clip_model_path):
         return None
-    # Qwen3.5 专用 handler（0.3.36+）
-    try:
-        from llama_cpp.llama_chat_format import Qwen35ChatHandler
-        handler = Qwen35ChatHandler(clip_model_path=clip_model_path)
-        print(f"[llama] 使用 Qwen35ChatHandler: {clip_model_path}")
-        return handler
-    except Exception as e:
-        print(f"[llama] Qwen35ChatHandler 加载失败: {e}")
-    try:
-        from llama_cpp.llama_chat_format import Qwen3VLChatHandler
-        handler = Qwen3VLChatHandler(clip_model_path=clip_model_path)
-        print(f"[llama] 使用 Qwen3VLChatHandler: {clip_model_path}")
-        return handler
-    except Exception as e:
-        print(f"[llama] Qwen3VLChatHandler 加载失败: {e}")
-    try:
-        from llama_cpp.llama_chat_format import Qwen25VLChatHandler
-        handler = Qwen25VLChatHandler(clip_model_path=clip_model_path)
-        print(f"[llama] 使用 Qwen25VLChatHandler: {clip_model_path}")
-        return handler
-    except Exception as e:
-        print(f"[llama] Qwen25VLChatHandler 加载失败: {e}")
+    
+    family = _detect_model_family(model_path) if model_path else None
+    
+    # ── Gemma 4（原生 tool calling + 多模态） ──
+    if family == "gemma4":
+        try:
+            from llama_cpp.llama_chat_format import Gemma4ChatHandler
+            # E2B/E4B 不支持 thinking（仅 31B/26BA4B 支持）
+            is_e2b = model_path and ("e2b" in os.path.basename(model_path).lower() or "e4b" in os.path.basename(model_path).lower())
+            enable_thinking = not is_e2b
+            handler = Gemma4ChatHandler(clip_model_path=clip_model_path, enable_thinking=enable_thinking)
+            print(f"[llama] 使用 Gemma4ChatHandler: {clip_model_path} (thinking={enable_thinking})")
+            return handler
+        except Exception as e:
+            print(f"[llama] Gemma4ChatHandler 加载失败: {e}")
+    
+    # ── Gemma 3 ──
+    if family == "gemma3":
+        try:
+            from llama_cpp.llama_chat_format import Gemma3ChatHandler
+            handler = Gemma3ChatHandler(clip_model_path=clip_model_path)
+            print(f"[llama] 使用 Gemma3ChatHandler: {clip_model_path}")
+            return handler
+        except Exception as e:
+            print(f"[llama] Gemma3ChatHandler 加载失败: {e}")
+    
+    # ── Qwen3.5 ──
+    if family == "qwen35":
+        try:
+            from llama_cpp.llama_chat_format import Qwen35ChatHandler
+            handler = Qwen35ChatHandler(clip_model_path=clip_model_path)
+            print(f"[llama] 使用 Qwen35ChatHandler: {clip_model_path}")
+            return handler
+        except Exception as e:
+            print(f"[llama] Qwen35ChatHandler 加载失败: {e}")
+    
+    # ── Qwen3 VL ──
+    if family == "qwen3":
+        try:
+            from llama_cpp.llama_chat_format import Qwen3VLChatHandler
+            handler = Qwen3VLChatHandler(clip_model_path=clip_model_path)
+            print(f"[llama] 使用 Qwen3VLChatHandler: {clip_model_path}")
+            return handler
+        except Exception as e:
+            print(f"[llama] Qwen3VLChatHandler 加载失败: {e}")
+    
+    # ── Qwen2.5 VL ──
+    if family == "qwen25":
+        try:
+            from llama_cpp.llama_chat_format import Qwen25VLChatHandler
+            handler = Qwen25VLChatHandler(clip_model_path=clip_model_path)
+            print(f"[llama] 使用 Qwen25VLChatHandler: {clip_model_path}")
+            return handler
+        except Exception as e:
+            print(f"[llama] Qwen25VLChatHandler 加载失败: {e}")
+    
+    # ── 通用回退（按优先级尝试已知 handler） ──
     try:
         from llama_cpp.llama_chat_format import Llava16ChatHandler
         handler = Llava16ChatHandler(clip_model_path=clip_model_path)
-        print(f"[llama] 使用 Llava16ChatHandler: {clip_model_path}")
+        print(f"[llama] 回退 LLaVA 1.6: {clip_model_path}")
         return handler
-    except Exception as e:
-        print(f"[llama] Llava16ChatHandler 加载失败: {e}")
+    except Exception:
+        pass
     try:
         from llama_cpp.llama_chat_format import Llava15ChatHandler
         handler = Llava15ChatHandler(clip_model_path=clip_model_path)
-        print(f"[llama] 使用 Llava15ChatHandler: {clip_model_path}")
+        print(f"[llama] 回退 LLaVA 1.5: {clip_model_path}")
         return handler
-    except Exception as e:
-        print(f"[llama] Llava15ChatHandler 加载失败: {e}")
+    except Exception:
+        pass
+    
     print("[llama] 无可用的 chat handler")
     return None
 
 
-def load_model(model_path, n_ctx=None, n_gpu_layers=None, chat_handler=None, force_cpu=False):
+def load_model(model_path, n_ctx=None, n_gpu_layers=None, chat_handler=None, force_cpu=False,
+              rope_scaling=None, rope_freq_base=None, rope_scale=None):
     """加载 GGUF 模型
     
     Args:
         model_path: 模型文件路径
-        n_ctx: 上下文长度
+        n_ctx: 上下文长度（默认 8192，支持 RoPE 扩展到 32K+）
         n_gpu_layers: GPU 层数（-1=全部, 0=仅 CPU）
         chat_handler: 多模态处理器（mmproj 文件路径，或 'auto' 自动检测）
         force_cpu: 强制使用 CPU 模式（覆盖 n_gpu_layers）
+        rope_scaling: RoPE 扩展类型 ("none", "linear", "yarn")
+        rope_freq_base: RoPE 基础频率（0=根据模型家族自动选择）
+        rope_scale: RoPE 扩展倍数（8K→16K=2.0）
     """
     global _model, _config
 
     n_ctx = n_ctx or GPU_DEFAULT_CTX
+    
+    # ── RoPE 上下文扩展 ──
+    from config import GPU_ROPE_SCALING, GPU_ROPE_FREQ_BASE, GPU_ROPE_SCALE, FAMILY_ROPE_BASE
+    rope_scaling = rope_scaling or GPU_ROPE_SCALING
+    rope_scale = rope_scale or GPU_ROPE_SCALE
+    
+    # 自动检测模型家族的推荐 RoPE freq_base
+    model_family = _detect_model_family(model_path)
+    if rope_freq_base is None or rope_freq_base <= 0:
+        rope_freq_base = GPU_ROPE_FREQ_BASE or FAMILY_ROPE_BASE.get(model_family, 0)
+    
+    # 上下文超过 8K 时自动启用 RoPE 扩展
+    if n_ctx > 8192 and rope_scaling != "none":
+        print(f"[llama] RoPE 扩展: n_ctx={n_ctx}, scaling={rope_scaling}, scale={rope_scale}, freq_base={rope_freq_base}")
 
     # 处理 GPU 层数
     if force_cpu:
@@ -173,7 +258,7 @@ def load_model(model_path, n_ctx=None, n_gpu_layers=None, chat_handler=None, for
                 else:
                     mmproj_path = os.path.join(MODELS_DIR, chat_handler)
             if mmproj_path and os.path.exists(mmproj_path):
-                handler = _get_chat_handler(mmproj_path)
+                handler = _get_chat_handler(mmproj_path, model_path)
             elif mmproj_path:
                 print(f"[llama] mmproj 文件不存在: {mmproj_path}")
         else:
@@ -181,15 +266,23 @@ def load_model(model_path, n_ctx=None, n_gpu_layers=None, chat_handler=None, for
             mmproj_path = _find_mmproj(model_path)
             if mmproj_path:
                 print(f"[llama] 自动检测到 mmproj: {mmproj_path}")
-                handler = _get_chat_handler(mmproj_path)
+                handler = _get_chat_handler(mmproj_path, model_path)
 
-        _model = LLAMA_CPP.Llama(
-            model_path=model_path,
-            n_ctx=n_ctx,
-            n_gpu_layers=n_gpu_layers,
-            verbose=False,
-            chat_handler=handler,
-        )
+        llama_kwargs = {
+            "model_path": model_path,
+            "n_ctx": n_ctx,
+            "n_gpu_layers": n_gpu_layers,
+            "verbose": False,
+            "chat_handler": handler,
+        }
+        # RoPE 扩展参数
+        if n_ctx > 8192 and rope_scaling != "none":
+            llama_kwargs["rope_freq_base"] = rope_freq_base
+            llama_kwargs["rope_scaling_type"] = {  # llama-cpp-python 用 dict 传
+                "type": rope_scaling,
+                "factor": rope_scale,
+            } if rope_scaling == "yarn" else rope_scale
+        _model = LLAMA_CPP.Llama(**llama_kwargs)
         _config = {
             "model": os.path.basename(model_path),
             "model_path": model_path,
@@ -199,6 +292,10 @@ def load_model(model_path, n_ctx=None, n_gpu_layers=None, chat_handler=None, for
             "mmproj": mmproj_path,
             "mmproj_loaded": handler is not None,
             "force_cpu": force_cpu,
+            "rope_scaling": rope_scaling if n_ctx > 8192 else "none",
+            "rope_freq_base": rope_freq_base,
+            "rope_scale": rope_scale,
+            "model_family": model_family,
         }
         print(f"[llama] 模型已加载: {_config['model']}, mmproj={'已加载' if handler else '未加载'}")
 
@@ -300,6 +397,24 @@ def infer(prompt=None, messages=None, images=None, system=None, stream=False, **
         # system 插入到最前面（如果提供了 system 且 messages 第一条不是 system）
         if system and (not chat_messages or chat_messages[0].get("role") != "system"):
             chat_messages.insert(0, {"role": "system", "content": system})
+        # 图片嵌入最后一条 user 消息（messages 模式下 images 被忽略的 bug 修复）
+        if images:
+            last_user = None
+            for m in reversed(chat_messages):
+                if m.get("role") == "user":
+                    last_user = m
+                    break
+            if last_user:
+                text_content = last_user.get("content") or ""
+                multimodal_content = [{"type": "text", "text": text_content}]
+                for img in images:
+                    img_bytes = _img_to_bytes(img)
+                    b64 = base64.b64encode(img_bytes).decode("utf-8")
+                    multimodal_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"}
+                    })
+                last_user["content"] = multimodal_content
     else:
         # 单条 prompt 模式（向后兼容）
         if system:
@@ -377,16 +492,27 @@ def infer(prompt=None, messages=None, images=None, system=None, stream=False, **
                     delta = chunk["choices"][0].get("delta", {})
                     content = delta.get("content", "")
                     reasoning = delta.get("reasoning_content", "")
-                    # Qwen think 模式: enable_thinking=True 时思考内容通过
-                    # reasoning_content 输出，需一并送入 content 通道
-                    if reasoning:
-                        yield reasoning
+                    tool_calls = delta.get("tool_calls")
+                    # 构建输出（Gemma4 等支持原生 tool calling 的模型）
+                    out = {}
                     if content:
-                        yield content
+                        out["content"] = content
+                    if reasoning:
+                        out["reasoning_content"] = reasoning
+                    if tool_calls:
+                        out["tool_calls"] = tool_calls
+                    if out:
+                        yield out
         return generate()
     else:
         response = _model.create_chat_completion(messages=chat_messages, tools=tools, **gen_params)
-        return response["choices"][0]["message"]["content"]
+        msg = response["choices"][0]["message"]
+        result = {"content": msg.get("content", "")}
+        if msg.get("tool_calls"):
+            result["tool_calls"] = msg["tool_calls"]
+        if msg.get("reasoning_content"):
+            result["reasoning_content"] = msg["reasoning_content"]
+        return result
 
 
 # ─── 初始化 ──────────────────────────────────────────────────────────────────

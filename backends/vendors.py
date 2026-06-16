@@ -137,9 +137,9 @@ VENDORS = {
         "transport": "openai_chat",
         "models": [
             "glm-4.7:cloud",
-            "qwen3.5:cloud",
-            "deepseek-v4-pro:cloud",
             "gemma4:31b-cloud",
+            "gpt-oss:20b-cloud",
+            "gpt-oss:120b-cloud",
         ],
         "default_model": "gemma4:31b-cloud",
     },

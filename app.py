@@ -72,6 +72,13 @@ def _log_res(resp):
     elapsed = time.time() - getattr(request, "_start", time.time())
     if request.path.startswith("/api/"):
         log.info("%s %s → %s (%.1fms)", request.method, request.path, resp.status_code, elapsed * 1000)
+        # 记录到性能监控
+        try:
+            from services.performance_monitor import get_monitor
+            status = "ok" if 200 <= resp.status_code < 400 else "error"
+            get_monitor().record(request.path, elapsed * 1000, status=status)
+        except Exception:
+            pass
     return resp
 
 
@@ -84,7 +91,12 @@ def _log_res(resp):
 # ═══════════════════════════════════════════════════════════════════════════════
 @app.route("/")
 def index():
-    return render_template("index.html")
+    from flask import make_response
+    resp = make_response(render_template("index.html"))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.route("/health")
@@ -304,6 +316,8 @@ def api_enhance():
         # 使用当前后端进行增强
         if _current_backend == "llama-cpp" and LLAMA_AVAILABLE:
             output = llama_infer(prompt=tpl["user"], system=tpl["system"], stream=False)
+            if isinstance(output, dict):
+                output = output.get("content", "")
         else:
             # 非 llama-cpp 后端，直接返回模板结果
             output = tpl.get("user", user_input)
@@ -355,6 +369,9 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                 n_gpu_layers=data.get("n_gpu_layers"),
                 chat_handler=chat_handler,
                 force_cpu=data.get("force_cpu", False),
+                rope_scaling=data.get("rope_scaling"),
+                rope_freq_base=data.get("rope_freq_base"),
+                rope_scale=data.get("rope_scale"),
             )
             config = llama_get_config()
             log.info("llama-cpp 模型已加载: %s, mmproj=%s", model, config.get("mmproj_loaded"))
@@ -370,32 +387,116 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
 
     @app.route("/api/llama/infer", methods=["POST"])
     def api_llama_infer():
+        """
+        llama.cpp 推理端点（流式+多轮工具调用）
+        
+        Gemma-4 原生 tool calling 输出格式：
+            <|tool_call>call:func_name{param1:<|"|>value1<|"|>}<tool_call|>
+        """
+        
+        def _parse_gemma4_tool_calls(text):
+            """解析 Gemma-4 原生 tool calling 格式
+            
+            格式: <|tool_call>call:function_name{key:<|"|>value<|"|>,...}<tool_call|>
+            其中 <|"|> 是 Gemma-4 的字符串包裹方式（类似引号）。
+            注意: 开头 <|tool_call> 结尾 <tool_call|>（不对称）
+            """
+            import re as _re
+            import uuid as _uuid
+            # 外层：匹配 <|tool_call>call:name{params}<tool_call|>
+            outer = _re.compile(
+                _re.escape('<|tool_call>') + r'call:([^{]+)\{([^}]*)\}' + _re.escape('<tool_call|>'),
+                _re.DOTALL
+            )
+            # 参数解析：key 以行首或逗号开头，值用 <|"|>...<|"|> 包裹或裸值
+            key_pattern = _re.compile(
+                r'(?:^|,\s*)'
+                r'([a-zA-Z_][\w]*)'
+                r'\s*:\s*'
+                r'(?:'
+                    r'<\|"\|>(.*?)<\|"\|>'
+                    r'|'
+                    r'([^,]+)'
+                r')',
+                _re.DOTALL
+            )
+            calls = []
+            for m in outer.finditer(text):
+                func_name = m.group(1).strip()
+                params_str = m.group(2).strip()
+                args = {}
+                for pm in key_pattern.finditer(params_str):
+                    key = pm.group(1)
+                    str_val = pm.group(2)  # <|"|>...<|"|> 内的字符串
+                    other_val = pm.group(3)  # 非字符串值
+                    if str_val is not None:
+                        args[key] = str_val.strip()
+                    else:
+                        val = (other_val or '').strip().rstrip(',')
+                        try:
+                            args[key] = json.loads(val)
+                        except (json.JSONDecodeError, ValueError):
+                            args[key] = val
+                if func_name:
+                    calls.append({
+                        "name": func_name,
+                        "arguments": args,
+                        "id": f"call_{_uuid.uuid4().hex[:8]}",
+                    })
+            return calls
+        
         if not llama_is_loaded():
             return _err("模型未加载")
         data = request.json or {}
         images_raw = data.get("images")
         tools = data.get("tools")
 
-        # 如果前端传了 tools，注入工具提示词到 system message
-        _tool_schemas = []  # 工具 schema 列表（传给 gpu.infer，用于模板渲染）
+        # ── 检测是否 Gemma-4 模型（原生 tool calling） ──
+        from backends.gpu import _detect_model_family
+        config = llama_get_config()
+        is_gemma4 = config and _detect_model_family(config.get("model_path", "")) == "gemma4"
+        has_mmproj = bool(config.get("chat_handler"))  # Gemma4ChatHandler 是否已加载（有 mmproj 才支持原生 tool calling）
+
+        # ── 工具 schema 收集（缓存避免每次都 discover_tools） ──
+        _tool_schemas = []  # 传给 gpu.infer 用于原生 tool calling 渲染
         if tools:
-            from tools.registry import discover_tools, get_registry
-            from environments.tool_parser import build_tool_prompt
-            discover_tools()
-            schemas = get_registry().get_schemas()
-            _tool_schemas = schemas
-            tool_prompt = build_tool_prompt(schemas)
-            existing_system = data.get("system_prompt") or ""
-            if "messages" in data and data["messages"]:
-                msgs = data["messages"]
-                # 在第一条 system 消息后追加工具提示
-                if msgs[0].get("role") == "system":
-                    msgs[0]["content"] = msgs[0]["content"] + "\n\n" + tool_prompt
-                else:
-                    msgs.insert(0, {"role": "system", "content": tool_prompt})
-                data["messages"] = msgs
+            from tools.registry import get_registry
+            # 只做轻量 get_schemas，不做 discover_tools（已在启动时触发）
+            reg = get_registry()
+            if reg and reg._tools:
+                _tool_schemas = reg.get_schemas()
             else:
-                data["system_prompt"] = existing_system + "\n\n" + tool_prompt if existing_system else tool_prompt
+                from tools.registry import discover_tools
+                discover_tools()
+                _tool_schemas = get_registry().get_schemas()
+        # 先对用户 system prompt 做 min_sys_prompt 截断（只截用户内容，不截工具定义）
+        min_sys = data.get("min_sys_prompt")
+        if min_sys and "messages" in data and data["messages"]:
+            msgs = data["messages"]
+            if msgs and msgs[0].get("role") == "system" and len(msgs[0]["content"]) > 200:
+                msgs[0]["content"] = msgs[0]["content"][:200] + "..."
+            data["messages"] = msgs
+        elif min_sys:
+            sp = data.get("system_prompt") or ""
+            if len(sp) > 200:
+                data["system_prompt"] = sp[:200] + "..."
+
+        if tools:
+            # Gemma-4：用原生 tool calling（GGUF 模板支持，输出 <|tool_call>call:name{params}<tool_call|>）
+            # 其他模型：XML 文本注入回退
+            if not is_gemma4:
+                from environments.tool_parser import build_tool_prompt
+                tool_prompt = build_tool_prompt(_tool_schemas)
+                existing_system = data.get("system_prompt") or ""
+                if "messages" in data and data["messages"]:
+                    msgs = data["messages"]
+                    if msgs[0].get("role") == "system":
+                        msgs[0]["content"] = msgs[0]["content"] + "\n\n" + tool_prompt
+                    else:
+                        msgs.insert(0, {"role": "system", "content": tool_prompt})
+                    data["messages"] = msgs
+                else:
+                    data["system_prompt"] = existing_system + "\n\n" + tool_prompt if existing_system else tool_prompt
 
         log.info("[DEBUG infer] images count=%s, types=%s, lengths=%s",
                  len(images_raw) if images_raw else 0,
@@ -406,6 +507,7 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                 prefix = str(img)[:80] if isinstance(img, str) else "non-string"
                 log.info("[DEBUG infer] images[%s] prefix: %s", idx, prefix)
         stream = data.get("stream", False)
+        
         try:
             if stream:
                 def generate():
@@ -413,7 +515,7 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                     from copy import deepcopy
                     from collections.abc import Generator
 
-                    # 构建推理参数（不传 tools=，让模型通过 XML 文本调用工具）
+                    # 构建推理参数
                     infer_params = {
                         "prompt": data.get("prompt"),
                         "images": data.get("images"),
@@ -424,39 +526,87 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                         "top_k": data.get("top_k"),
                         "repeat_penalty": data.get("repeat_penalty"),
                     }
+                    # Gemma-4：传 tools schema 给模板渲染（GGUF 模板或 Gemma4ChatHandler 均支持）
+                    if is_gemma4 and _tool_schemas:
+                        infer_params["tools"] = _tool_schemas
+                    
                     # 用 messages 模式（优先）
                     _messages = deepcopy(data.get("messages", []))
+                    
+                    # ── min_sys_prompt 截断已在 tool_prompt 注入前完成（见上方），此处无需重复 ──
 
-                    max_rounds = 10  # 最多执行 10 轮工具调用
+                    max_rounds = 30  # 支持大文件分块读取（如 10000 行 / 500 行每次 = 20 轮）
                     for round_num in range(max_rounds):
                         # ── 调模型，收集完整输出 ──
                         full_text = ""
+                        native_tool_calls = []  # Gemma-4 原生 tool_calls
                         for chunk in llama_infer(messages=_messages, stream=True, **infer_params):
-                            content = chunk if isinstance(chunk, str) else chunk.get("content", "")
+                            if isinstance(chunk, str):
+                                content = chunk
+                                reasoning = ""
+                            else:
+                                content = chunk.get("content", "")
+                                reasoning = chunk.get("reasoning_content", "")
+                                # Gemma-4 原生 tool_calls（非增量式，最后一个 chunk 带完整列表）
+                                if chunk.get("tool_calls"):
+                                    native_tool_calls = chunk["tool_calls"]
                             full_text += content
-                            yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+                            if content:
+                                yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+                            if reasoning:
+                                yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning}, ensure_ascii=False)}\n\n"
 
                         # ── 如果没有启用工具，直接结束 ──
                         if not tools:
                             break
 
-                        # ── 用 ToolCallParser 解析 XML 工具调用 ──
-                        from agent.loop import ToolCallParser
-                        tool_calls = ToolCallParser.parse(full_text)
+                        # ── 解析工具调用 ──
+                        tool_calls = []
+                        if is_gemma4 and has_mmproj and native_tool_calls:
+                            # Gemma4ChatHandler 原生 OpenAI tool_calls
+                            clean_text = full_text
+                            for ntc in native_tool_calls:
+                                func = ntc.get("function", {})
+                                tc_args = func.get("arguments", {})
+                                if isinstance(tc_args, str):
+                                    try:
+                                        tc_args = json.loads(tc_args)
+                                    except:
+                                        tc_args = {}
+                                tool_calls.append({
+                                    "name": func.get("name", ""),
+                                    "arguments": tc_args,
+                                    "id": ntc.get("id", f"call_{uuid.uuid4().hex[:8]}"),
+                                })
+                        elif is_gemma4:
+                            # Gemma-4 无 mmproj：解析 <|tool_call>call:name{params}<tool_call|> 格式
+                            tool_calls = _parse_gemma4_tool_calls(full_text)
+                            clean_text = re.sub(
+                                re.escape('<|tool_call>') + r'call:[^{]*\{[^}]*\}' + re.escape('<tool_call|>'),
+                                '', full_text
+                            ).strip() if tool_calls else full_text
+                        else:
+                            # XML 回退
+                            from agent.loop import ToolCallParser
+                            tool_calls = ToolCallParser.parse(full_text)
+                            if tool_calls:
+                                clean_text = re.sub(
+                                    r'<tool_call[^>]*>.*?</tool_call>',
+                                    '', full_text, flags=re.DOTALL
+                                ).strip()
+                            else:
+                                clean_text = full_text
 
+                        # ── 没有工具调用 → 追加纯文本消息并结束 ──
                         if not tool_calls:
-                            break  # 无工具调用，结束循环
-
-                        # ── 从文本中移除 XML 块 ──
-                        clean_text = re.sub(
-                            r'<tool_call[^>]*>.*?</tool_call>',
-                            '', full_text, flags=re.DOTALL
-                        ).strip()
-
-                        # ── 构建 OpenAI 格式的 tool_calls ──
+                            _messages.append({
+                                "role": "assistant",
+                                "content": full_text,
+                            })
+                            break
                         tc_stubs = []
                         for tc in tool_calls:
-                            tc_id = f"call_{uuid.uuid4().hex[:8]}"
+                            tc_id = tc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
                             tc_args = json.dumps(tc["arguments"], ensure_ascii=False)
                             tc_stubs.append({
                                 "id": tc_id,
@@ -519,6 +669,9 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                     repeat_penalty=data.get("repeat_penalty"),
                     stream=False,
                 )
+                # 非流式返回值现在是 dict: {"content": ..., "tool_calls": ...}
+                if isinstance(result, dict):
+                    result = result.get("content", "")
                 return jsonify({"output": result, "backend": "llama-cpp"})
         except Exception as e:
             log.error("llama-cpp 推理失败: %s", e)
@@ -702,6 +855,7 @@ def append_message(session_id):
         token_count=data.get("token_count"),
         finish_reason=data.get("finish_reason"),
         reasoning_content=data.get("reasoning_content"),
+        attachments=data.get("attachments"),
     )
     return jsonify({"id": msg_id, "ok": True})
 
@@ -1504,10 +1658,9 @@ def api_metrics():
         }
 
         # 工具统计
-        registry = get_registry()
         metrics["tools"] = {
-            "registered": len(registry.tools),
-            "calls_today": 0,  # TODO: 从持久化存储读取
+            "registered": len(get_registry()._tools),
+            "calls_today": monitor._counters.get("tool_call", 0),
             "success_rate": 1.0,
         }
 

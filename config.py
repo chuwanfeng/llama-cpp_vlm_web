@@ -1,6 +1,7 @@
 """
 配置常量
 """
+
 import os
 
 # ─── 基础路径 ────────────────────────────────────────────────────────────────
@@ -14,6 +15,22 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 GPU_DEFAULT_CTX = 8192
 GPU_DEFAULT_LAYERS = 0  # -1 = 全部
 GPU_DEFAULT_MAX_TOKENS = 4096
+
+# ─── 上下文扩展 (RoPE Scaling) ──────────────────────────────────────────────
+# 本地模型默认 8K，可通过 RoPE 扩展到更长上下文
+# 支持的 scaling 类型: "none", "linear", "yarn"
+GPU_ROPE_SCALING = os.environ.get("GPU_ROPE_SCALING", "yarn")  # none|linear|yarn
+GPU_ROPE_FREQ_BASE = float(os.environ.get("GPU_ROPE_FREQ_BASE", 0))  # 0=自动
+GPU_ROPE_SCALE = float(os.environ.get("GPU_ROPE_SCALE", 2.0))  # 扩展倍数: 8K→16K=2.0
+# 模型家族对应的推荐 RoPE freq_base
+FAMILY_ROPE_BASE = {
+    "gemma4": 10000.0,  # Gemma-4 默认 10K
+    "gemma3": 10000.0,
+    "qwen35": 1000000.0,  # Qwen3.5 默认 1M
+    "qwen3": 1000000.0,  # Qwen3 默认 1M
+    "qwen25": 1000000.0,  # Qwen2.5 默认 1M
+    "llama4": 500000.0,  # LLaMA 4
+}
 
 # ─── 推理参数默认值 ──────────────────────────────────────────────────────────
 DEFAULT_TEMPERATURE = 0.7

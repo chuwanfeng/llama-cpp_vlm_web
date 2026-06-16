@@ -60,11 +60,34 @@ LOCAL_PATTERNS = [
 # ── Playwright 可用性检测 ───────────────────────────────────────────────────
 
 try:
-    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeoutError
+    import asyncio
+    from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     logger.warning("Playwright 未安装，浏览器工具将使用 requests 回退模式")
+
+
+def _run_async(coro):
+    """在独立线程中运行 async 协程（彻底隔离事件循环冲突）。
+
+    当工具从已有 asyncio 循环（如 Flask async / AgentLoop）中被调用时，
+    同一线程内无法启动第二个事件循环。
+    解决：派生独立线程 + new_event_loop() + run_until_complete()。
+    """
+    import asyncio as _asyncio
+    import concurrent.futures
+
+    def _runner():
+        loop = _asyncio.new_event_loop()
+        _asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(_runner).result()
 
 # ── 辅助函数 ─────────────────────────────────────────────────────────────────
 
@@ -145,10 +168,14 @@ def _fetch_page_requests(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, 
             if len(content) > MAX_RESPONSE_SIZE:
                 return {"success": False, "error": f"页面过大（> {MAX_RESPONSE_SIZE // 1024 // 1024}MB）"}
         encoding = resp.encoding or "utf-8"
+        # 优先尝试 UTF-8（requests 库对中文站点常返回 ISO-8859-1）
         try:
-            html = content.decode(encoding, errors="replace")
-        except Exception:
-            html = content.decode("utf-8", errors="replace")
+            html = content.decode("utf-8")
+        except (UnicodeDecodeError, Exception):
+            try:
+                html = content.decode(encoding, errors="replace")
+            except Exception:
+                html = content.decode("utf-8", errors="replace")
         title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.DOTALL | re.IGNORECASE)
         title = title_match.group(1).strip() if title_match else ""
         text = _html_to_markdown(html, url)
@@ -162,28 +189,33 @@ def _fetch_page_requests(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, 
 
 # ── Playwright 抓取 ─────────────────────────────────────────────────────────
 
+async def _fetch_page_playwright_async(url: str, timeout: int = DEFAULT_TIMEOUT, wait_for: str = "") -> Dict[str, Any]:
+    """异步 Playwright 抓取（JS 渲染）。内部使用，由 _run_async 调用。"""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(user_agent=USER_AGENT)
+        page = await context.new_page()
+        await page.goto(url, timeout=timeout * 1000, wait_until="networkidle")
+        if wait_for:
+            try:
+                await page.wait_for_selector(wait_for, timeout=5000)
+            except PWTimeoutError:
+                pass  # 选择器未出现，继续
+        title = await page.title()
+        html = await page.content()
+        text = _html_to_markdown(html, url)
+        await browser.close()
+        return {"success": True, "html": html[:1000], "text": text, "title": title, "status_code": 200}
+
+
 def _fetch_page_playwright(url: str, timeout: int = DEFAULT_TIMEOUT, wait_for: str = "") -> Dict[str, Any]:
-    """使用 Playwright 抓取网页（支持 JS 渲染）。"""
+    """使用 Playwright 抓取网页（JS 渲染），同步封装。"""
     if not PLAYWRIGHT_AVAILABLE:
         return {"success": False, "error": "Playwright 未安装", "fallback": True}
     if _is_local_url(url):
         return {"success": False, "error": f"禁止访问内网地址: {url}"}
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=USER_AGENT)
-            page = context.new_page()
-            page.goto(url, timeout=timeout * 1000, wait_until="networkidle")
-            if wait_for:
-                try:
-                    page.wait_for_selector(wait_for, timeout=5000)
-                except PWTimeoutError:
-                    pass  # 选择器未出现，继续
-            title = page.title()
-            html = page.content()
-            text = _html_to_markdown(html, url)
-            browser.close()
-            return {"success": True, "html": html[:1000], "text": text, "title": title, "status_code": 200}
+        return _run_async(_fetch_page_playwright_async(url, timeout, wait_for))
     except PWTimeoutError:
         return {"success": False, "error": f"页面加载超时（{timeout} 秒）"}
     except Exception as e:
@@ -244,22 +276,28 @@ def browser_read_page(url: str, selector: str = "") -> str:
         return json.dumps({"error": "url 参数必填"})
     if PLAYWRIGHT_AVAILABLE and selector:
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                context = browser.new_context(user_agent=USER_AGENT)
-                page = context.new_page()
-                page.goto(url, timeout=15000, wait_until="networkidle")
-                element = page.query_selector(selector)
-                if element:
-                    text = element.inner_text()
-                    browser.close()
-                    return json.dumps({
-                        "success": True, "url": url, "selector": selector,
-                        "text": text[:10000],
-                    }, ensure_ascii=False)
-                else:
-                    browser.close()
-                    return json.dumps({"success": False, "url": url, "selector": selector, "error": "未找到匹配元素"}, ensure_ascii=False)
+            async def _read():
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    context = await browser.new_context(user_agent=USER_AGENT)
+                    page = await context.new_page()
+                    await page.goto(url, timeout=15000, wait_until="networkidle")
+                    element = await page.query_selector(selector)
+                    if element:
+                        text = await element.inner_text()
+                        await browser.close()
+                        return {"found": True, "text": text}
+                    else:
+                        await browser.close()
+                        return {"found": False}
+            result = _run_async(_read())
+            if result["found"]:
+                return json.dumps({
+                    "success": True, "url": url, "selector": selector,
+                    "text": result["text"][:10000],
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({"success": False, "url": url, "selector": selector, "error": "未找到匹配元素"}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"success": False, "url": url, "error": f"Playwright 错误: {type(e).__name__}: {str(e)}"}, ensure_ascii=False)
     # 回退到 requests + 正则
@@ -313,27 +351,32 @@ def browser_screenshot(url: str, selector: str = "", full_page: bool = False) ->
             "error": "截图功能需要 Playwright。安装命令：pip install playwright && playwright install chromium"
         })
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=USER_AGENT, viewport={"width": 1280, "height": 720})
-            page = context.new_page()
-            page.goto(url, timeout=30000, wait_until="networkidle")
-            if selector:
-                element = page.query_selector(selector)
-                if element:
-                    screenshot_bytes = element.screenshot()
+        async def _shot():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(user_agent=USER_AGENT, viewport={"width": 1280, "height": 720})
+                page = await context.new_page()
+                await page.goto(url, timeout=30000, wait_until="networkidle")
+                if selector:
+                    element = await page.query_selector(selector)
+                    if element:
+                        shot = await element.screenshot()
+                    else:
+                        await browser.close()
+                        return {"success": False, "error": f"未找到元素: {selector}"}
                 else:
-                    browser.close()
-                    return json.dumps({"success": False, "error": f"未找到元素: {selector}"}, ensure_ascii=False)
-            else:
-                screenshot_bytes = page.screenshot(full_page=full_page)
-            browser.close()
-            image_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
-            return json.dumps({
-                "success": True, "url": url, "format": "png",
-                "image_base64": image_b64,
-                "note": f"data:image/png;base64,{image_b64[:50]}..." if len(image_b64) > 50 else "",
-            }, ensure_ascii=False)
+                    shot = await page.screenshot(full_page=full_page)
+                await browser.close()
+                return {"success": True, "shot": shot}
+        result = _run_async(_shot())
+        if not result["success"]:
+            return json.dumps(result, ensure_ascii=False)
+        image_b64 = base64.b64encode(result["shot"]).decode("utf-8")
+        return json.dumps({
+            "success": True, "url": url, "format": "png",
+            "image_base64": image_b64,
+            "note": f"data:image/png;base64,{image_b64[:50]}..." if len(image_b64) > 50 else "",
+        }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"success": False, "error": f"截图失败: {type(e).__name__}: {str(e)}"}, ensure_ascii=False)
 
@@ -352,24 +395,30 @@ def browser_click(url: str, selector: str) -> str:
     if not PLAYWRIGHT_AVAILABLE:
         return json.dumps({"success": False, "error": "需要 Playwright。安装命令：pip install playwright && playwright install chromium"})
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=USER_AGENT)
-            page = context.new_page()
-            page.goto(url, timeout=30000, wait_until="networkidle")
-            element = page.query_selector(selector)
-            if not element:
-                browser.close()
-                return json.dumps({"success": False, "error": f"未找到元素: {selector}"}, ensure_ascii=False)
-            element.click()
-            page.wait_for_load_state("networkidle", timeout=10000)
-            new_url = page.url
-            text = _html_to_markdown(page.content(), new_url)
-            browser.close()
-            return json.dumps({
-                "success": True, "url": url, "new_url": new_url,
-                "selector": selector, "text": text[:10000],
-            }, ensure_ascii=False)
+        async def _click():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(user_agent=USER_AGENT)
+                page = await context.new_page()
+                await page.goto(url, timeout=30000, wait_until="networkidle")
+                element = await page.query_selector(selector)
+                if not element:
+                    await browser.close()
+                    return {"found": False}
+                await element.click()
+                await page.wait_for_load_state("networkidle", timeout=10000)
+                new_url = page.url
+                html = await page.content()
+                text = _html_to_markdown(html, new_url)
+                await browser.close()
+                return {"found": True, "new_url": new_url, "text": text}
+        result = _run_async(_click())
+        if not result["found"]:
+            return json.dumps({"success": False, "error": f"未找到元素: {selector}"}, ensure_ascii=False)
+        return json.dumps({
+            "success": True, "url": url, "new_url": result["new_url"],
+            "selector": selector, "text": result["text"][:10000],
+        }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"success": False, "error": f"点击失败: {type(e).__name__}: {str(e)}"}, ensure_ascii=False)
 
@@ -389,24 +438,27 @@ def browser_fill_form(url: str, fields: dict) -> str:
     if not PLAYWRIGHT_AVAILABLE:
         return json.dumps({"success": False, "error": "需要 Playwright。安装命令：pip install playwright && playwright install chromium"})
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=USER_AGENT)
-            page = context.new_page()
-            page.goto(url, timeout=30000, wait_until="networkidle")
-            filled = []
-            for selector, value in fields.items():
-                element = page.query_selector(selector)
-                if element:
-                    element.fill(str(value))
-                    filled.append(selector)
-                else:
-                    logger.warning("表单填写: 未找到元素 %s", selector)
-            browser.close()
-            return json.dumps({
-                "success": True, "url": url, "filled_fields": filled,
-                "total": len(fields), "filled_count": len(filled),
-            }, ensure_ascii=False)
+        async def _fill():
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(user_agent=USER_AGENT)
+                page = await context.new_page()
+                await page.goto(url, timeout=30000, wait_until="networkidle")
+                filled = []
+                for selector, value in fields.items():
+                    element = await page.query_selector(selector)
+                    if element:
+                        await element.fill(str(value))
+                        filled.append(selector)
+                    else:
+                        logger.warning("表单填写: 未找到元素 %s", selector)
+                await browser.close()
+                return filled
+        filled = _run_async(_fill())
+        return json.dumps({
+            "success": True, "url": url, "filled_fields": filled,
+            "total": len(fields), "filled_count": len(filled),
+        }, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"success": False, "error": f"表单填写失败: {type(e).__name__}: {str(e)}"}, ensure_ascii=False)
 
