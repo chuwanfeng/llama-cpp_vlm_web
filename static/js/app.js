@@ -268,6 +268,14 @@ async function init() {
   collectAuxProviders();   // 辅助模型可用厂商列表（先填选项）
   await loadAuxConfig();   // 辅助模型配置（再设值 — 选项已存在才能正确匹配）
   await loadToolSchemas();
+  // 根据当前后端同步所有功能开关（防止 loadSettings 被另一面板覆盖）
+  { const _p = isVendorBackend(backendType) ? 'vendor' : 'local';
+    toolsEnabled = document.getElementById('tools-' + _p + '-enable')?.checked ?? false;
+    thinkOutputEnabled = document.getElementById('think-output-' + _p)?.checked ?? true;
+    autoReviewEnabled = document.getElementById('auto-review-' + _p)?.checked ?? false;
+    ctxExtEnabled = document.getElementById('ctx-ext-' + _p)?.checked ?? true;
+    minPromptEnabled = document.getElementById('min-prompt-' + _p)?.checked ?? true;
+  }
   updateBackendStatus();
   syncSettingsPanels();
 }
@@ -611,10 +619,13 @@ async function send() {
     }
   }
 
-  // 同步工具开关（根据当前后端读取对应 checkbox）
-  toolsEnabled = isVendorBackend(backendType)
-    ? document.getElementById('tools-vendor-enable')?.checked || false
-    : document.getElementById('tools-local-enable')?.checked || false;
+  // 同步所有功能开关（根据当前后端读取对应 checkbox，防止 loadSettings 时被另一面板覆盖）
+  const _p = isVendorBackend(backendType) ? 'vendor' : 'local';
+  toolsEnabled        = document.getElementById('tools-' + _p + '-enable')?.checked ?? false;
+  thinkOutputEnabled  = document.getElementById('think-output-' + _p)?.checked ?? true;
+  autoReviewEnabled   = document.getElementById('auto-review-' + _p)?.checked ?? false;
+  ctxExtEnabled       = document.getElementById('ctx-ext-' + _p)?.checked ?? true;
+  minPromptEnabled    = document.getElementById('min-prompt-' + _p)?.checked ?? true;
 
   // 加载工具定义（如果启用工具调用）
   if (toolsEnabled) await loadToolSchemas();
@@ -2372,10 +2383,10 @@ async function loadToolSchemas() {
     const data = await r.json();
     toolSchemas = data.tools || [];
     console.log(`Loaded ${toolSchemas.length} tool schemas`);
-    // 同步复选框状态 — 根据当前后端
+    // 同步 toolsEnabled 全局变量 — loadSettings 已正确设置 checkbox，此处读取
     const cbId = isVendorBackend(backendType) ? 'tools-vendor-enable' : 'tools-local-enable';
     const toggle = document.getElementById(cbId);
-    if (toggle) toggle.checked = toolsEnabled;
+    if (toggle) toolsEnabled = toggle.checked;
     // 更新状态显示
     const statusId = isVendorBackend(backendType) ? 'tools-status-vendor' : 'tools-status-local';
     const status = document.getElementById(statusId);
