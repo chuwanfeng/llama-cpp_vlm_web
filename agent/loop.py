@@ -375,6 +375,9 @@ class AgentLoop:
         """
         reasoning_per_turn = []
         tool_errors: List[ToolError] = []
+        # ── 重复调用检测 ──
+        _consecutive_same_tool = 0
+        _last_tool_name = None
 
         import time
         start_time = time.monotonic()
@@ -662,6 +665,23 @@ class AgentLoop:
                     "[%s] turn %d 完成: API=%.1fs, %d 工具, 总耗时=%.1fs",
                     self.task_id, turn + 1, api_elapsed, len(tool_calls), turn_elapsed
                 )
+
+                # ── 重复调用检测：同一工具连续调用 >=3 次 → 注入警告 ──
+                this_turn_tools = [tc.get("function", {}).get("name", "") for tc in tool_calls]
+                if len(this_turn_tools) == 1 and this_turn_tools[0] == _last_tool_name:
+                    _consecutive_same_tool += 1
+                else:
+                    _consecutive_same_tool = 1
+                _last_tool_name = this_turn_tools[0] if len(this_turn_tools) == 1 else None
+
+                if _consecutive_same_tool >= 3:
+                    logger.warning(
+                        "[%s] 工具 '%s' 连续调用 %d 次，注入停止警告",
+                        self.task_id, _last_tool_name, _consecutive_same_tool
+                    )
+                    warning_msg = {"role": "system", "content": f"⚠️ 你已经连续 {_consecutive_same_tool} 轮调用 '{_last_tool_name}' 工具。\n如果已经获取了足够的信息，请停止调用工具，直接用现有信息回答用户。\n如果没有找到相关信息，也请如实告诉用户，不要反复搜索。"}
+                    messages.append(warning_msg)
+                    _consecutive_same_tool = 0  # 重置，只警告一次
 
             # ===== 无工具调用:结束 =====
             else:
