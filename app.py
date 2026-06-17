@@ -541,9 +541,8 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                     # Gemma 用 <channel|> 标记结束，Qwen 用 </think>
                     # 策略：小缓冲区 + 后缀检测，确保跨 chunk 标记不丢失
                     THINK_MARKERS = ["<channel|>", "</think>"]
-                    MAX_MARKER = max(len(m) for m in THINK_MARKERS)  # 10
-                    # 缓冲区上限：模型如果这段长度后仍无标记 → 大概率没有 thinking → 全量 flush
-                    THINK_BUF_MAX = 500
+                    # 不设上限：思考长度不可控（Qwen3.6 对 "5+3=?" 就输出了 721 字符）
+                    # 缓冲区无界累积直到标记出现，或流结束兜底全当正文输出
 
                     for round_num in range(max_rounds):
                         # ── 调模型，收集完整输出 ──
@@ -567,10 +566,11 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
 
                             if content:
                                 if _think_ended:
-                                    # 标记已出现 → 后续全是正文
+                                    # 标记已出现 → 后续全是正文，流式输出
                                     full_text += content
                                     yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
                                 else:
+                                    # 标记未出现 → 全部累积，等标记
                                     _think_buf += content
                                     # 扫描完整标记
                                     best_idx = float('inf')
@@ -581,7 +581,7 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                                             best_idx = idx
                                             best_marker = marker
                                     if best_marker is not None:
-                                        # 找到标记 → 标记前=thinking，标记后=正文
+                                        # 找到标记 → 标记前=thinking（一次性整块发），标记后=正文
                                         think_part = _think_buf[:best_idx]
                                         after_part = _think_buf[best_idx + len(best_marker):]
                                         if think_part.strip():
@@ -591,15 +591,9 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                                         if after_part:
                                             full_text += after_part
                                             yield f"data: {json.dumps({'type': 'content', 'content': after_part}, ensure_ascii=False)}\n\n"
-                                    elif len(_think_buf) >= THINK_BUF_MAX:
-                                        # 缓冲区超过上限仍无标记 → 不拆了，全当正文输出
-                                        full_text += _think_buf
-                                        yield f"data: {json.dumps({'type': 'content', 'content': _think_buf}, ensure_ascii=False)}\n\n"
-                                        _think_buf = ""
-                                        _think_ended = True
-                                    # else: 缓冲区未满且无标记 → 继续累积
+                                    # 无标记 → 继续累积，不设上限
 
-                        # ── 兜底：循环结束后缓冲区剩余内容 → 无标记模型，当正文输出
+                        # ── 兜底：流结束缓冲区仍有内容 → 无标记模型，全当正文一次性输出
                         if _think_buf:
                             full_text += _think_buf
                             if not _think_ended:
