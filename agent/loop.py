@@ -954,6 +954,73 @@ class AgentLoop:
                         flags=re.DOTALL
                     ).strip()
 
+        # ── 回退 J: reasoning_content 中也搜索 tool_call ──
+        # DeepSeek 等模型在 thinking 模式中，tool_call 可能只出现在 reasoning_content 而非 content 中
+        if not tool_calls and reasoning:
+            import re
+            # 复用 tool_call_parsers 对 reasoning 文本做解析
+            try:
+                from services.tool_call_parsers import get_parser
+                priority_order = ["hermes", "llama3_json", "llama4_json", "qwen", "deepseek_v3", "mistral"]
+                for parser_name in priority_order:
+                    parser = get_parser(parser_name)
+                    parsed_text, parsed_calls = parser.parse(reasoning)
+                    if parsed_calls:
+                        tool_calls = []
+                        for tc_data in parsed_calls:
+                            tool_calls.append({
+                                "id": tc_data.id,
+                                "type": tc_data.type,
+                                "function": {
+                                    "name": tc_data.function.name,
+                                    "arguments": tc_data.function.arguments,
+                                }
+                            })
+                        logger.info(
+                            "[%s] 从 reasoning_content 用 '%s' 提取到 %d 个工具调用",
+                            self.task_id, parser_name, len(tool_calls)
+                        )
+                        break
+            except ImportError:
+                pass
+
+        # ── 回退 K: JSON {"tool_call": {...}} 格式提取（DeepSeek thinking 非标准格式）──
+        # DeepSeek 在 thinking 中会输出 {"tool_call": {"name": "...", "arguments": {...}}}
+        if not tool_calls:
+            import re
+            texts_to_check = [full_content] if full_content else []
+            if reasoning:
+                texts_to_check.append(reasoning)
+            for check_text in texts_to_check:
+                if not check_text:
+                    continue
+                tc_pattern = re.compile(
+                    r'\{\s*"tool_call"\s*:\s*\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\s*\}\s*\}',
+                    re.DOTALL
+                )
+                for match in tc_pattern.finditer(check_text):
+                    tc_name = match.group(1)
+                    tc_args_str = match.group(2)
+                    try:
+                        tc_args = json.loads(tc_args_str)
+                    except (json.JSONDecodeError, TypeError):
+                        tc_args = {}
+                    tool_calls = tool_calls or []
+                    tool_calls.append({
+                        "id": f"call_{uuid.uuid4().hex[:8]}",
+                        "type": "function",
+                        "function": {
+                            "name": tc_name,
+                            "arguments": json.dumps(tc_args, ensure_ascii=False),
+                        }
+                    })
+                    logger.info(
+                        "[%s] 从文本中用 JSON 格式提取到 tool_call '%s'",
+                        self.task_id, tc_name
+                    )
+                if tool_calls:
+                    break
+
         resp = {
             "choices": [{
                 "message": {
