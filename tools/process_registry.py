@@ -575,48 +575,45 @@ def register_process_tool():
     """注册 process 工具到工具注册表。"""
     from tools.registry import registry, tool_error
 
+    PROCESS_DESCRIPTION = (
+        "管理通过 terminal(background=true) 启动的后台进程。"
+        "操作: 'list' (显示所有), 'poll' (检查状态 + 新输出), "
+        "'log' (完整输出带分页), 'wait' (阻塞直到完成或超时), "
+        "'kill' (终止), 'write' (发送原始 stdin 数据不带换行), "
+        "'submit' (发送数据 + Enter，用于回答提示), 'close' (关闭 stdin/发送 EOF)。"
+    )
     PROCESS_SCHEMA = {
-        "name": "process",
-        "description": (
-            "管理通过 terminal(background=true) 启动的后台进程。"
-            "操作: 'list' (显示所有), 'poll' (检查状态 + 新输出), "
-            "'log' (完整输出带分页), 'wait' (阻塞直到完成或超时), "
-            "'kill' (终止), 'write' (发送原始 stdin 数据不带换行), "
-            "'submit' (发送数据 + Enter，用于回答提示), 'close' (关闭 stdin/发送 EOF)。"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["list", "poll", "log", "wait", "kill", "write", "submit", "close"],
-                    "description": "对后台进程执行的操作"
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "进程会话 ID（来自 terminal background 输出）。除 'list' 外所有操作都需要。"
-                },
-                "data": {
-                    "type": "string",
-                    "description": "要发送到进程 stdin 的文本（用于 'write' 和 'submit' 操作）"
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": "'wait' 操作的最大阻塞秒数。超时返回部分输出。",
-                    "minimum": 1
-                },
-                "offset": {
-                    "type": "integer",
-                    "description": "'log' 操作的行偏移量（默认：最后 200 行）"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "'log' 操作返回的最大行数",
-                    "minimum": 1
-                }
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list", "poll", "log", "wait", "kill", "write", "submit", "close"],
+                "description": "对后台进程执行的操作"
             },
-            "required": ["action"]
-        }
+            "session_id": {
+                "type": "string",
+                "description": "进程会话 ID（来自 terminal background 输出）。除 'list' 外所有操作都需要。"
+            },
+            "data": {
+                "type": "string",
+                "description": "要发送到进程 stdin 的文本（用于 'write' 和 'submit' 操作）"
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "'wait' 操作的最大阻塞秒数。超时返回部分输出。",
+                "minimum": 1
+            },
+            "offset": {
+                "type": "integer",
+                "description": "'log' 操作的行偏移量（默认：最后 200 行）"
+            },
+            "limit": {
+                "type": "integer",
+                "description": "'log' 操作返回的最大行数",
+                "minimum": 1
+            }
+        },
+        "required": ["action"]
     }
 
     def _handle_process(args, **kw):
@@ -651,6 +648,7 @@ def register_process_tool():
         name="process",
         toolset="terminal",
         schema=PROCESS_SCHEMA,
+        description=PROCESS_DESCRIPTION,
         handler=_handle_process,
         emoji="⚙️",
     )
