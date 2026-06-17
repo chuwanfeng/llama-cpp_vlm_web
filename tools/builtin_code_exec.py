@@ -503,6 +503,7 @@ registry.register(
 
 registry.register(
     name="code_eval",
+    description="安全求值数学/字符串表达式（纯Python AST，无subprocess）。仅用于复杂计算（多步运算、大数、类型转换等），禁止用于1+1等可直接回答的简单口算。",
     schema=CODE_EVAL_SCHEMA,
     handler=code_eval,
 )
