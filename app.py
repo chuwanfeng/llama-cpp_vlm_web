@@ -536,10 +536,22 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                     # ── min_sys_prompt 截断已在 tool_prompt 注入前完成（见上方），此处无需重复 ──
 
                     max_rounds = 30  # 支持大文件分块读取（如 10000 行 / 500 行每次 = 20 轮）
+                    # ── 内联 think 标记检测 ──
+                    # 无 chat_handler 时，Gemma (<channel|>) 和 Qwen (</think>) 的思考链
+                    # 混在 content 流中，需要按标记拆分为 reasoning + content
+                    INLINE_THINK_MARKERS = [
+                        "<channel|>",   # Gemma-4 (无 mmproj)
+                        "</think>",     # Qwen3/VL
+                    ]
+                    _think_ended = False  # 当前轮中 thinking 是否已结束
+                    _think_buffer = ""   # 尚未发送的 content 缓冲区（等待 end 标记）
+
                     for round_num in range(max_rounds):
                         # ── 调模型，收集完整输出 ──
                         full_text = ""
                         native_tool_calls = []  # Gemma-4 原生 tool_calls
+                        _think_ended = False
+                        _think_buffer = ""
                         for chunk in llama_infer(messages=_messages, stream=True, **infer_params):
                             if isinstance(chunk, str):
                                 content = chunk
@@ -550,11 +562,43 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                                 # Gemma-4 原生 tool_calls（非增量式，最后一个 chunk 带完整列表）
                                 if chunk.get("tool_calls"):
                                     native_tool_calls = chunk["tool_calls"]
-                            full_text += content
-                            if content:
-                                yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+
+                            # ── 内联 think 标记拆分 ──
+                            # chat_handler 已分离的 reasoning → 始终输出
                             if reasoning:
                                 yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning}, ensure_ascii=False)}\n\n"
+
+                            if content:
+                                if _think_ended or reasoning:
+                                    # thinking 已结束（或 chat_handler 已分离）→ 正常输出
+                                    full_text += content
+                                    yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+                                else:
+                                    # 尚未看到 think 结束标记 → 缓冲累积
+                                    _think_buffer += content
+                                    ended = False
+                                    for marker in INLINE_THINK_MARKERS:
+                                        idx = _think_buffer.find(marker)
+                                        if idx >= 0:
+                                            think_part = _think_buffer[:idx]
+                                            after_part = _think_buffer[idx + len(marker):]
+                                            if think_part:
+                                                yield f"data: {json.dumps({'type': 'reasoning', 'content': think_part}, ensure_ascii=False)}\n\n"
+                                            _think_buffer = ""
+                                            _think_ended = True
+                                            if after_part:
+                                                full_text += after_part
+                                                yield f"data: {json.dumps({'type': 'content', 'content': after_part}, ensure_ascii=False)}\n\n"
+                                            ended = True
+                                            break
+                                    if not ended:
+                                        # 缓冲区>200 字仍无标记 → 不当 thinking，直接输出
+                                        has_any_marker = any(m in _think_buffer for m in INLINE_THINK_MARKERS)
+                                        if not has_any_marker and len(_think_buffer) > 200:
+                                            full_text += _think_buffer
+                                            yield f"data: {json.dumps({'type': 'content', 'content': _think_buffer}, ensure_ascii=False)}\n\n"
+                                            _think_buffer = ""
+                                            _think_ended = True
 
                         # ── 如果没有启用工具，直接结束 ──
                         if not tools:
