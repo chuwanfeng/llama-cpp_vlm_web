@@ -537,21 +537,18 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
 
                     max_rounds = 30  # 支持大文件分块读取（如 10000 行 / 500 行每次 = 20 轮）
                     # ── 内联 think 标记检测 ──
-                    # 无 chat_handler 时，Gemma (<channel|>) 和 Qwen (</think>) 的思考链
-                    # 混在 content 流中，需要按标记拆分为 reasoning + content
-                    INLINE_THINK_MARKERS = [
-                        "<channel|>",   # Gemma-4 (无 mmproj)
-                        "</think>",     # Qwen3/VL
-                    ]
-                    _think_ended = False  # 当前轮中 thinking 是否已结束
-                    _think_buffer = ""   # 尚未发送的 content 缓冲区（等待 end 标记）
+                    # llama-cpp-python 不往 delta 填 reasoning_content，所有输出都在 content
+                    # Gemma 用 <channel|> 标记结束，Qwen 用 </think>
+                    # 策略：小缓冲区 + 后缀检测，确保跨 chunk 标记不丢失
+                    THINK_MARKERS = ["<channel|>", "</think>"]
+                    MAX_MARKER = max(len(m) for m in THINK_MARKERS)  # 10
 
                     for round_num in range(max_rounds):
                         # ── 调模型，收集完整输出 ──
                         full_text = ""
-                        native_tool_calls = []  # Gemma-4 原生 tool_calls
+                        native_tool_calls = []
                         _think_ended = False
-                        _think_buffer = ""
+                        _think_buf = ""
                         for chunk in llama_infer(messages=_messages, stream=True, **infer_params):
                             if isinstance(chunk, str):
                                 content = chunk
@@ -559,46 +556,57 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                             else:
                                 content = chunk.get("content", "")
                                 reasoning = chunk.get("reasoning_content", "")
-                                # Gemma-4 原生 tool_calls（非增量式，最后一个 chunk 带完整列表）
                                 if chunk.get("tool_calls"):
                                     native_tool_calls = chunk["tool_calls"]
 
-                            # ── 内联 think 标记拆分 ──
-                            # chat_handler 已分离的 reasoning → 始终输出
+                            # reasoning 已分离（chat_handler 或内联拆分后的回填）→ 直接发
                             if reasoning:
                                 yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning}, ensure_ascii=False)}\n\n"
 
                             if content:
                                 if _think_ended or reasoning:
-                                    # thinking 已结束（或 chat_handler 已分离）→ 正常输出
                                     full_text += content
                                     yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
                                 else:
-                                    # 尚未看到 think 结束标记 → 缓冲累积
-                                    _think_buffer += content
-                                    ended = False
-                                    for marker in INLINE_THINK_MARKERS:
-                                        idx = _think_buffer.find(marker)
-                                        if idx >= 0:
-                                            think_part = _think_buffer[:idx]
-                                            after_part = _think_buffer[idx + len(marker):]
-                                            if think_part:
-                                                yield f"data: {json.dumps({'type': 'reasoning', 'content': think_part}, ensure_ascii=False)}\n\n"
-                                            _think_buffer = ""
-                                            _think_ended = True
-                                            if after_part:
-                                                full_text += after_part
-                                                yield f"data: {json.dumps({'type': 'content', 'content': after_part}, ensure_ascii=False)}\n\n"
-                                            ended = True
-                                            break
-                                    if not ended:
-                                        # 缓冲区>200 字仍无标记 → 不当 thinking，直接输出
-                                        has_any_marker = any(m in _think_buffer for m in INLINE_THINK_MARKERS)
-                                        if not has_any_marker and len(_think_buffer) > 200:
-                                            full_text += _think_buffer
-                                            yield f"data: {json.dumps({'type': 'content', 'content': _think_buffer}, ensure_ascii=False)}\n\n"
-                                            _think_buffer = ""
-                                            _think_ended = True
+                                    _think_buf += content
+                                    # 扫描完整标记
+                                    best_idx = float('inf')
+                                    best_marker = None
+                                    for marker in THINK_MARKERS:
+                                        idx = _think_buf.find(marker)
+                                        if idx >= 0 and idx < best_idx:
+                                            best_idx = idx
+                                            best_marker = marker
+                                    if best_marker is not None:
+                                        think_part = _think_buf[:best_idx]
+                                        after_part = _think_buf[best_idx + len(best_marker):]
+                                        if think_part:
+                                            yield f"data: {json.dumps({'type': 'reasoning', 'content': think_part}, ensure_ascii=False)}\n\n"
+                                        _think_buf = ""
+                                        _think_ended = True
+                                        if after_part:
+                                            full_text += after_part
+                                            yield f"data: {json.dumps({'type': 'content', 'content': after_part}, ensure_ascii=False)}\n\n"
+                                    else:
+                                        # 没有完整标记 → 检查缓冲尾部是否可能是标记前缀
+                                        # 安全部分（不会是任何标记前缀的）立即输出
+                                        safe_end = len(_think_buf)
+                                        for marker in THINK_MARKERS:
+                                            for plen in range(1, len(marker)):
+                                                if _think_buf.endswith(marker[:plen]):
+                                                    safe_end = min(safe_end, len(_think_buf) - plen)
+                                                    break  # 只取最长的后缀匹配
+                                        safe_part = _think_buf[:safe_end]
+                                        if len(safe_part) > 0:
+                                            full_text += safe_part
+                                            yield f"data: {json.dumps({'type': 'content', 'content': safe_part}, ensure_ascii=False)}\n\n"
+                                            _think_buf = _think_buf[safe_end:]
+
+                        # ── 兜底：循环结束后缓冲区剩余内容 → 输出
+                        if _think_buf and not _think_ended:
+                            full_text += _think_buf
+                            yield f"data: {json.dumps({'type': 'content', 'content': _think_buf}, ensure_ascii=False)}\n\n"
+                            _think_buf = ""
 
                         # ── 如果没有启用工具，直接结束 ──
                         if not tools:
