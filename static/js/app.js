@@ -736,10 +736,13 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
         if (!line.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(line.slice(6));
-          if (data.type === 'reasoning' && thinkOutputEnabled) {
-            _ensureReasoningBlock(msgEl, data.content);
-            _tokenCount++;
-            updateMsgTps(msgEl, _tokenCount, _tpsStart);
+          if (data.type === 'reasoning') {
+            // 思考链：开关打开→折叠块，关闭→静默丢弃（不混入正文）
+            if (thinkOutputEnabled) {
+              _ensureReasoningBlock(msgEl, data.content);
+              _tokenCount++;
+              updateMsgTps(msgEl, _tokenCount, _tpsStart);
+            }
           } else if (data.content) {
             turnText += data.content;
             _tokenCount++;
