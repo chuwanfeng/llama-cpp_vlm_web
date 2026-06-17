@@ -296,7 +296,11 @@ class AgentLoop:
         model: str = None,
         tool_choice: str = "auto",
         plan_mode: bool = False,
-        web_search: bool = False,  # 联网搜索开关(控制厂商原生搜索)
+        web_search: bool = False,   # 联网搜索开关(控制厂商原生搜索)
+        think_output: bool = True,  # 是否输出思考链
+        auto_review: bool = False,  # 对话完成后自动审查
+        ctx_ext: bool = True,       # 上下文扩展(控制压缩阈值)
+        min_prompt: bool = True,    # 最小系统提示词
         **backend_kwargs
     ):
         """
@@ -327,7 +331,11 @@ class AgentLoop:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.plan_mode = plan_mode
-        self.web_search = web_search  # 联网搜索开关
+        self.web_search = web_search      # 联网搜索开关
+        self.think_output = think_output    # 思考链输出
+        self.auto_review = auto_review      # 自动审查
+        self.ctx_ext = ctx_ext              # 上下文扩展
+        self.min_prompt = min_prompt        # 最小提示词
 
         # 后端参数
         self.vendor_id = vendor_id
@@ -381,7 +389,8 @@ class AgentLoop:
 
             # === 上下文压缩检查 ===
             # 每轮开始前检查消息量是否超过阈值,超过则自动压缩
-            if self.compressor:
+            # ctx_ext 为 False 时跳过压缩(由前端设置面板控制)
+            if self.compressor and self.ctx_ext:
                 from services.context_compressor import estimate_messages_tokens_rough
                 estimated = estimate_messages_tokens_rough(messages)
                 if self.compressor.should_compress(prompt_tokens=estimated):

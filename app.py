@@ -469,8 +469,8 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                 from tools.registry import discover_tools
                 discover_tools()
                 _tool_schemas = get_registry().get_schemas()
-        # 先对用户 system prompt 做 min_sys_prompt 截断（只截用户内容，不截工具定义）
-        min_sys = data.get("min_sys_prompt")
+        # min_prompt 开关：启用时截断 system prompt 至 200 字（极简模式）
+        min_sys = data.get("min_prompt", True) or data.get("min_sys_prompt")
         if min_sys and "messages" in data and data["messages"]:
             msgs = data["messages"]
             if msgs and msgs[0].get("role") == "system" and len(msgs[0]["content"]) > 200:

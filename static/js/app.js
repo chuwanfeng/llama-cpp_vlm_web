@@ -19,6 +19,10 @@ let _lastToolCallId = null;
 let auxConfig = { enabled: false, provider: '', model: '', tasks: ['compression'] };
 let auxProviders = [];  // available providers for aux dropdown
 var toolsEnabled = false;  // 工具调用开关（var 使 window.toolsEnabled 生效，_SF 注册表通过 window[d.var] 访问）
+var thinkOutputEnabled = true;    // 思考链输出开关
+var autoReviewEnabled = false;   // 自动审查开关
+var ctxExtEnabled = true;        // 上下文扩展开关
+var minPromptEnabled = true;     // 最小提示开关
 let toolSchemas = [];      // 从服务端加载的工具定义
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -42,12 +46,12 @@ const _SF_VENDOR = {
   's-temp-vendor':        { el: 's-temp-vendor' },
   's-max-vendor':         { el: 's-max-vendor' },
   's-topp-vendor':        { el: 's-topp-vendor' },
-  'tools_vendor':         { el: 'tools-vendor-enable',     var: 'toolsEnabledVendor',  type: 'checkbox' },
-  'plan_mode_vendor':     { el: 'plan-mode-vendor',        var: 'planModeVendor',      type: 'checkbox' },
-  'think_output_vendor':  { el: 'think-output-vendor',     var: 'thinkOutputVendor',   type: 'checkbox' },
-  'auto_review_vendor':   { el: 'auto-review-vendor',      var: 'autoReviewVendor',    type: 'checkbox' },
-  'min_prompt_vendor':    { el: 'min-prompt-vendor',       var: 'minPromptVendor',     type: 'checkbox' },
-  'ctx_ext_vendor':       { el: 'ctx-ext-vendor',          var: 'ctxExtVendor',        type: 'checkbox' },
+  'tools_vendor':         { el: 'tools-vendor-enable',     var: 'toolsEnabled',       type: 'checkbox' },
+  'plan_mode_vendor':     { el: 'plan-mode-vendor',        var: 'planModeEnabled',    type: 'checkbox' },
+  'think_output_vendor':  { el: 'think-output-vendor',     var: 'thinkOutputEnabled',  type: 'checkbox' },
+  'auto_review_vendor':   { el: 'auto-review-vendor',      var: 'autoReviewEnabled',   type: 'checkbox' },
+  'min_prompt_vendor':    { el: 'min-prompt-vendor',       var: 'minPromptEnabled',    type: 'checkbox' },
+  'ctx_ext_vendor':       { el: 'ctx-ext-vendor',          var: 'ctxExtEnabled',        type: 'checkbox' },
 };
 
 async function saveSettings() {
@@ -686,6 +690,10 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
       stream: true
     };
     if (toolsEnabled && toolSchemas.length) body.tools = toolSchemas;
+    body.think_output = thinkOutputEnabled;
+    body.auto_review = autoReviewEnabled;
+    body.ctx_ext = ctxExtEnabled;
+    body.min_prompt = minPromptEnabled;
 
     const res = await fetch('/api/llama/infer', {
       method: 'POST',
@@ -715,7 +723,7 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
         if (!line.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(line.slice(6));
-          if (data.type === 'reasoning') {
+          if (data.type === 'reasoning' && thinkOutputEnabled) {
             _ensureReasoningBlock(msgEl, data.content);
             _tokenCount++;
             updateMsgTps(msgEl, _tokenCount, _tpsStart);
@@ -871,6 +879,10 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
     top_p: parseFloat(document.getElementById('s-topp-vendor').value),
     plan_mode: planModeEnabled,  // Plan 模式：不执行工具，返回计划
     web_search: webSearchEnabled,  // 联网搜索开关：传至后端控制厂商原生搜索
+    think_output: thinkOutputEnabled,  // 思考链输出
+    auto_review: autoReviewEnabled,    // 自动审查
+    ctx_ext: ctxExtEnabled,            // 上下文扩展
+    min_prompt: minPromptEnabled,      // 最小提示
   };
 
   const res = await fetch('/api/agent/chat/stream', {
@@ -976,6 +988,7 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
             // Plan 执行完成，后续正常流式对话
             break;
           case 'reasoning':
+            if (!thinkOutputEnabled) break;
             _ensureReasoningBlock(msgEl, event.content);
             _tokenCount++;
             updateMsgTps(msgEl, _tokenCount, _tpsStart);

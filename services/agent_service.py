@@ -138,13 +138,20 @@ def _build_loop(data: dict, messages: list) -> AgentLoop:
         tool_choice=data.get("tool_choice", "auto"),
         plan_mode=data.get("plan_mode", False),
         web_search=data.get("web_search", False),  # 联网搜索开关（控制厂商原生搜索）
+        think_output=data.get("think_output", True),
+        auto_review=data.get("auto_review", False),
+        ctx_ext=data.get("ctx_ext", True),
+        min_prompt=data.get("min_prompt", True),
     )
 
 
-def _inject_system_prompt(messages: list, tool_schemas: list[dict], cwd: str = None) -> list:
+def _inject_system_prompt(messages: list, tool_schemas: list[dict], cwd: str = None, min_prompt: bool = True) -> list:
     """如果 messages 中没有 system 消息，自动构建一个包含工具描述的 system prompt。
 
     如果已有 system 消息，则在其内容后追加工具描述。
+
+    min_prompt=True:  仅注入工具描述（极简模式）
+    min_prompt=False: 注入完整系统提示（平台信息 + 工具描述）
     """
     import copy
     msgs = copy.deepcopy(messages)
@@ -154,8 +161,8 @@ def _inject_system_prompt(messages: list, tool_schemas: list[dict], cwd: str = N
         cwd=cwd,
         include_soul=False,   # 身份由前端控制
         include_agents=False, # 规则由前端控制
-        include_platform=True,
-        include_tools=True,
+        include_platform=not min_prompt,  # min_prompt=True 时省略平台信息
+        include_tools=True,              # 工具描述始终需要
     )
 
     if not tools_prompt:
@@ -195,7 +202,7 @@ def agent_chat():
 
     # 自动构建系统提示词（含工具描述 + 平台信息）
     tool_schemas = [t.to_openai_schema() for t in get_registry().list_available()]
-    messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"))
+    messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"), min_prompt=data.get("min_prompt", True))
 
     try:
         result = asyncio.run(loop.run(messages))
@@ -250,7 +257,7 @@ def agent_chat_stream():
 
     # 自动构建系统提示词（含工具描述 + 平台信息）
     tool_schemas = [t.to_openai_schema() for t in get_registry().list_available()]
-    messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"))
+    messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"), min_prompt=data.get("min_prompt", True))
 
     def generate():
         event_queue = queue.Queue()
@@ -345,8 +352,8 @@ def agent_chat_stream():
 
                 # ── 后台自我进化 Review ──
                 # 移植自 hermes-agent _spawn_background_review
-                # 仅在对话自然完成时触发
-                if result.finished_naturally and len(messages) >= 2:
+                # 仅在对话自然完成 + auto_review 开关启用时触发
+                if loop.auto_review and result.finished_naturally and len(messages) >= 2:
                     try:
                         from agent.self_improve.review import run_review_sync
                         snapshot = list(result.messages) if result.messages else list(messages)
@@ -542,7 +549,7 @@ def agent_plan_execute():
                 loop = _build_loop(data, msgs)
                 loop.plan_mode = False
                 tool_schemas = [t.to_openai_schema() for t in registry.list_available()]
-                msgs = _inject_system_prompt(msgs, tool_schemas, cwd=data.get("cwd"))
+                msgs = _inject_system_prompt(msgs, tool_schemas, cwd=data.get("cwd"), min_prompt=data.get("min_prompt", True))
 
                 _loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(_loop)
