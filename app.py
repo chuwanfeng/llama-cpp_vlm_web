@@ -542,6 +542,8 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                     # 策略：小缓冲区 + 后缀检测，确保跨 chunk 标记不丢失
                     THINK_MARKERS = ["<channel|>", "</think>"]
                     MAX_MARKER = max(len(m) for m in THINK_MARKERS)  # 10
+                    # 缓冲区上限：模型如果这段长度后仍无标记 → 大概率没有 thinking → 全量 flush
+                    THINK_BUF_MAX = 500
 
                     for round_num in range(max_rounds):
                         # ── 调模型，收集完整输出 ──
@@ -564,7 +566,8 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                                 yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning}, ensure_ascii=False)}\n\n"
 
                             if content:
-                                if _think_ended or reasoning:
+                                if _think_ended:
+                                    # 标记已出现 → 后续全是正文
                                     full_text += content
                                     yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
                                 else:
@@ -578,34 +581,29 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                                             best_idx = idx
                                             best_marker = marker
                                     if best_marker is not None:
+                                        # 找到标记 → 标记前=thinking，标记后=正文
                                         think_part = _think_buf[:best_idx]
                                         after_part = _think_buf[best_idx + len(best_marker):]
-                                        if think_part:
+                                        if think_part.strip():
                                             yield f"data: {json.dumps({'type': 'reasoning', 'content': think_part}, ensure_ascii=False)}\n\n"
                                         _think_buf = ""
                                         _think_ended = True
                                         if after_part:
                                             full_text += after_part
                                             yield f"data: {json.dumps({'type': 'content', 'content': after_part}, ensure_ascii=False)}\n\n"
-                                    else:
-                                        # 没有完整标记 → 检查缓冲尾部是否可能是标记前缀
-                                        # 安全部分（不会是任何标记前缀的）立即输出
-                                        safe_end = len(_think_buf)
-                                        for marker in THINK_MARKERS:
-                                            for plen in range(1, len(marker)):
-                                                if _think_buf.endswith(marker[:plen]):
-                                                    safe_end = min(safe_end, len(_think_buf) - plen)
-                                                    break  # 只取最长的后缀匹配
-                                        safe_part = _think_buf[:safe_end]
-                                        if len(safe_part) > 0:
-                                            full_text += safe_part
-                                            yield f"data: {json.dumps({'type': 'content', 'content': safe_part}, ensure_ascii=False)}\n\n"
-                                            _think_buf = _think_buf[safe_end:]
+                                    elif len(_think_buf) >= THINK_BUF_MAX:
+                                        # 缓冲区超过上限仍无标记 → 不拆了，全当正文输出
+                                        full_text += _think_buf
+                                        yield f"data: {json.dumps({'type': 'content', 'content': _think_buf}, ensure_ascii=False)}\n\n"
+                                        _think_buf = ""
+                                        _think_ended = True
+                                    # else: 缓冲区未满且无标记 → 继续累积
 
-                        # ── 兜底：循环结束后缓冲区剩余内容 → 输出
-                        if _think_buf and not _think_ended:
+                        # ── 兜底：循环结束后缓冲区剩余内容 → 无标记模型，当正文输出
+                        if _think_buf:
                             full_text += _think_buf
-                            yield f"data: {json.dumps({'type': 'content', 'content': _think_buf}, ensure_ascii=False)}\n\n"
+                            if not _think_ended:
+                                yield f"data: {json.dumps({'type': 'content', 'content': _think_buf}, ensure_ascii=False)}\n\n"
                             _think_buf = ""
 
                         # ── 如果没有启用工具，直接结束 ──
