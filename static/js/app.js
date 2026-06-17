@@ -602,6 +602,8 @@ async function send() {
 
   const assistantMsg = addMsg('ast', '');
   planModeActive = false; // 每次发送重置 Plan 活动标记
+  _lastTurnText = '';     // 重置（防止上一轮输出残留到本轮保存）
+  _reasoningText = '';    // 重置推理文本
 
   // AbortController for stopping
   abortCtrl = new AbortController();
@@ -1018,6 +1020,7 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
 
   // 渲染最终结果
   if (hasContent) {
+    _lastTurnText = turnText;  // 持久化保存使用
     renderFinal(msgEl, turnText);
   } else if (!planModeActive) {
     // Plan 模式：保留空气泡（计划卡片已在 renderPlan 中渲染到 ct 中）
