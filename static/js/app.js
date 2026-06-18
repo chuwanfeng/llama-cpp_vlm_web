@@ -1555,31 +1555,34 @@ function updateTokenDisplay(reasoningPerTurn) {
   tokenEl.textContent = 'Tokens: ' + total + ' (this turn: ' + (reasoningPerTurn[reasoningPerTurn.length-1] || 0) + ')';
 }
 
-function renderMarkdown(text) {
-  let html = esc(text);
-  // Code blocks
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    return `<div class="code-block"><div class="code-hd"><span>${lang || 'code'}</span><button class="code-copy" onclick="copyCode(this)">复制</button></div><pre><code>${code.trim()}</code></pre></div>`;
-  });
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // Bold
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Italic
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--accent);text-decoration:none">$1</a>');
-  // Lists
-  html = html.replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul style="margin:8px 0;padding-left:20px">$&</ul>');
-  // Line breaks
-  html = html.replace(/\n/g, '<br>');
-  return html;
-}
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 最终渲染
 // ──────────────────────────────────────────────────────────────────────────────
+// ── 渲染后处理：语法高亮 + 复制按钮 ──
+function _postProcessMarkdown(bubble) {
+  if (!bubble) return;
+  if (typeof hljs !== 'undefined') {
+    bubble.querySelectorAll('pre code').forEach(function(block) {
+      hljs.highlightElement(block);
+    });
+  }
+  bubble.querySelectorAll('.code-copy').forEach(function(btn) {
+    if (btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', function() {
+      var code = btn.closest('.code-block').querySelector('code');
+      if (!code) return;
+      navigator.clipboard.writeText(code.textContent).then(function() {
+        btn.textContent = '已复制';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = '复制'; btn.classList.remove('copied'); }, 1500);
+      });
+    });
+  });
+}
+
 function renderFinal(msgEl, rawText) {
   const bubble = msgEl.querySelector('.msg-bubble');
   if (!bubble) return;
@@ -1589,6 +1592,7 @@ function renderFinal(msgEl, rawText) {
   cleanText = cleanText.replace(/[\s\S]*?<\/think>/, '').trim();
   
   bubble.innerHTML = renderMarkdown(cleanText || rawText);
+  _postProcessMarkdown(bubble);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2231,6 +2235,8 @@ async function loadSessionMessages(sessionId) {
           const bubble = el.querySelector('.msg-bubble');
           if (bubble) bubble.dataset.attachments = JSON.stringify(m.attachments);
         }
+        // 后处理：语法高亮 + 复制按钮
+        _postProcessMarkdown(el.querySelector('.msg-bubble'));
       }
     }
     scroller();
@@ -3730,29 +3736,84 @@ function clearLogs() {
 }
 function renderMarkdown(text) {
   if (!text) return '';
-  var html = text;
-  // 代码块 (```...```)
+  var html = escHtml(text);
+
+  // ── 代码块（优先级最高，先提取保护，避免内部内容被后续规则误处理）──
+  var codeBlocks = [];
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
-    return '<pre><code class="language-' + lang + '">' + escHtml(code.trim()) + '</code></pre>';
+    var idx = codeBlocks.length;
+    codeBlocks.push({ lang: lang || '', code: code.trim() });
+    return '\u0000CODEBLOCK_' + idx + '\u0000';
   });
-  // 行内代码
+
+  // ── 行内代码 ──
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // 粗体
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // 斜体
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  // 标题
+
+  // ── 表格 ──
+  html = html.replace(/^\|(.+)\|\s*\n\|[-: |]+\|\s*\n((?:\|.+\|\s*\n?)*)/gm, function(full, headerRow, bodyRows) {
+    var ths = headerRow.split('|').filter(function(s) { return s.trim(); })
+      .map(function(s) { return '<th>' + s.trim() + '</th>'; }).join('');
+    var rows = bodyRows.trim().split('\n').map(function(row) {
+      var tds = row.split('|').filter(function(s) { return s.trim(); })
+        .map(function(s) { return '<td>' + s.trim() + '</td>'; }).join('');
+      return '<tr>' + tds + '</tr>';
+    }).join('');
+    return '<div class="md-table"><table><thead><tr>' + ths + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  });
+
+  // ── 水平线 ──
+  html = html.replace(/^[-*_]{3,}\s*$/gm, '<hr>');
+
+  // ── 引用块 ──
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote><p>$1</p></blockquote>');
+  html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n');
+
+  // ── 标题 ──
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  // 无序列表
+
+  // ── 有序列表 ──
+  html = html.replace(/^(\d+)\. (.+)$/gm, '\u0000OLI\u0000$1\u0000SEP\u0000$2');
+  html = html.replace(/(?:\u0000OLI\u0000\d+\u0000SEP\u0000.+\n?)+/g, function(m) {
+    var items = m.replace(/\u0000OLI\u0000\d+\u0000SEP\u0000/g, '<li>').replace(/\n/g, '</li>');
+    return '<ol>' + items + '</li></ol>';
+  });
+
+  // ── 无序列表 ──
   html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/<li>/g, '<ul><li>');
-  html = html.replace(/<\/li>/g, '</li></ul>');
-  // 段落（双换行分割）
+  html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, function(m) {
+    if (m.indexOf('<ol>') !== -1) return m;
+    return '<ul>' + m + '</ul>';
+  });
+
+  // ── 粗体 / 斜体 ──
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // ── 链接 ──
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // ── 图片 ──
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">');
+
+  // ── 分段（双换行 → 段落）──
   html = '<p>' + html.replace(/\n\n/g, '</p><p>') + '</p>';
   html = html.replace(/\n/g, '<br>');
   html = html.replace(/<p><\/p>/g, '');
+  html = html.replace(/<p><(h[1-6]|hr|ul|ol|blockquote|table|div)/g, '<$1');
+  html = html.replace(/(<\/(h[1-6]|ul|ol|blockquote|table|div)>)(<\/p>)?/g, '$1');
+
+  // ── 还原代码块 ──
+  html = html.replace(/\u0000CODEBLOCK_(\d+)\u0000/g, function(_, idx) {
+    var cb = codeBlocks[idx];
+    if (!cb) return '';
+    var langLabel = cb.lang || 'code';
+    return '<div class="code-block">' +
+      '<div class="code-hd"><span>' + escHtml(langLabel) + '</span><button class="code-copy">复制</button></div>' +
+      '<pre><code class="language-' + escHtml(cb.lang) + '">' + escHtml(cb.code) + '</code></pre></div>';
+  });
+
   return html;
 }
 

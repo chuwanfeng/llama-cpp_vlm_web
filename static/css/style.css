@@ -122,6 +122,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .msg-actions{display:flex;gap:4px;opacity:0;transition:opacity .2s;margin-top:6px}
 .msg:hover .msg-actions{opacity:1}
 .msg.usr .msg-actions{justify-content:flex-end}
+.msg-tps{margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap;align-self:center}
 .msg-btn{width:28px;height:28px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:all .15s}
 .msg-btn:hover{background:var(--sidebar-hover);color:var(--text)}
 .msg-btn:active{transform:scale(.95)}
@@ -142,6 +143,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 /* Inline code */
 .ct code{background:rgba(255,255,255,.06);padding:2px 6px;border-radius:4px;font-size:.9em;font-family:'SF Mono',monospace;color:var(--text2)}
+
+/* Markdown: headings */
+.ct h1{font-size:1.5em;font-weight:600;border-bottom:1px solid var(--border);padding-bottom:6px;margin:16px 0 10px;color:var(--text)}
+.ct h2{font-size:1.25em;font-weight:600;margin:14px 0 8px;color:var(--text)}
+.ct h3{font-size:1.1em;font-weight:600;margin:12px 0 6px;color:var(--text)}
+
+/* Markdown: table */
+.md-table{overflow-x:auto;margin:10px 0}
+.md-table table{width:100%;border-collapse:collapse;font-size:14px}
+.md-table th{background:var(--sidebar);color:var(--text2);font-weight:600;padding:8px 12px;text-align:left;border:1px solid var(--border)}
+.md-table td{padding:8px 12px;border:1px solid var(--border);color:var(--text)}
+.md-table tr:hover td{background:var(--sidebar-hover)}
+
+/* Markdown: blockquote */
+.ct blockquote{border-left:3px solid var(--accent);margin:10px 0;padding:6px 14px;color:var(--text2);background:var(--think-bg);border-radius:0 6px 6px 0}
+
+/* Markdown: horizontal rule */
+.msg.ast .msg-bubble hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+
+/* Markdown: ordered list */
+.ct ol{margin:8px 0;padding-left:24px}
+.ct ol li{margin:4px 0;line-height:1.7}
+
+/* Markdown: unordered list extension */
+.ct ul{margin:8px 0;padding-left:20px}
+.ct ul li{margin:4px 0;line-height:1.7}
+
+/* Markdown: link / emphasis */
+.ct a{color:var(--accent);text-decoration:none}
+.ct a:hover{text-decoration:underline}
+.ct em{font-style:italic;color:var(--text2)}
 
 /* Attachments */
 .atchs{display:flex;flex-wrap:wrap;gap:8px;padding:8px 24px}
