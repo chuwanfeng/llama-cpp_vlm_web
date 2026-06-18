@@ -536,20 +536,12 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                     # ── min_sys_prompt 截断已在 tool_prompt 注入前完成（见上方），此处无需重复 ──
 
                     max_rounds = 30  # 支持大文件分块读取（如 10000 行 / 500 行每次 = 20 轮）
-                    # ── 内联 think 标记检测 ──
-                    # llama-cpp-python 不往 delta 填 reasoning_content，所有输出都在 content
-                    # Gemma 用 <channel|> 标记结束，Qwen 用 </think>
-                    # 策略：小缓冲区 + 后缀检测，确保跨 chunk 标记不丢失
-                    THINK_MARKERS = ["<channel|>", "</think>"]
-                    # 不设上限：思考长度不可控（Qwen3.6 对 "5+3=?" 就输出了 721 字符）
-                    # 缓冲区无界累积直到标记出现，或流结束兜底全当正文输出
+                    # 思考链标记检测已移至前端（实时渲染 + 免缓冲延迟）
 
                     for round_num in range(max_rounds):
                         # ── 调模型，收集完整输出 ──
                         full_text = ""
                         native_tool_calls = []
-                        _think_ended = False
-                        _think_buf = ""
                         for chunk in llama_infer(messages=_messages, stream=True, **infer_params):
                             if isinstance(chunk, str):
                                 content = chunk
@@ -560,45 +552,13 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
                                 if chunk.get("tool_calls"):
                                     native_tool_calls = chunk["tool_calls"]
 
-                            # reasoning 已分离（chat_handler 或内联拆分后的回填）→ 直接发
+                            # reasoning 已分离（chat_handler 原生支持）→ 直接发
                             if reasoning:
                                 yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning}, ensure_ascii=False)}\n\n"
 
                             if content:
-                                if _think_ended:
-                                    # 标记已出现 → 后续全是正文，流式输出
-                                    full_text += content
-                                    yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
-                                else:
-                                    # 标记未出现 → 全部累积，等标记
-                                    _think_buf += content
-                                    # 扫描完整标记
-                                    best_idx = float('inf')
-                                    best_marker = None
-                                    for marker in THINK_MARKERS:
-                                        idx = _think_buf.find(marker)
-                                        if idx >= 0 and idx < best_idx:
-                                            best_idx = idx
-                                            best_marker = marker
-                                    if best_marker is not None:
-                                        # 找到标记 → 标记前=thinking（一次性整块发），标记后=正文
-                                        think_part = _think_buf[:best_idx]
-                                        after_part = _think_buf[best_idx + len(best_marker):]
-                                        if think_part.strip():
-                                            yield f"data: {json.dumps({'type': 'reasoning', 'content': think_part}, ensure_ascii=False)}\n\n"
-                                        _think_buf = ""
-                                        _think_ended = True
-                                        if after_part:
-                                            full_text += after_part
-                                            yield f"data: {json.dumps({'type': 'content', 'content': after_part}, ensure_ascii=False)}\n\n"
-                                    # 无标记 → 继续累积，不设上限
-
-                        # ── 兜底：流结束缓冲区仍有内容 → 无标记模型，全当正文一次性输出
-                        if _think_buf:
-                            full_text += _think_buf
-                            if not _think_ended:
-                                yield f"data: {json.dumps({'type': 'content', 'content': _think_buf}, ensure_ascii=False)}\n\n"
-                            _think_buf = ""
+                                full_text += content
+                                yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
 
                         # ── 如果没有启用工具，直接结束 ──
                         if not tools:

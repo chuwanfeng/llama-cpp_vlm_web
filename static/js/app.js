@@ -588,7 +588,12 @@ async function send() {
   const memCtx = await fetchMemoryContext(txt);
   if (memCtx) systemPrompt = (systemPrompt ? memCtx + '\n\n' + systemPrompt : memCtx);
 
-  addMsg('usr', txt, [...attI, ...attF]);
+  var userMsgEl = addMsg('usr', txt, [...attI, ...attF]);
+  // 实时消息也要设 dataset.attachments，供编辑/重新生成时 restoreAttachments 读取
+  if ((attI.length || attF.length) && userMsgEl) {
+    var _ub = userMsgEl.querySelector('.msg-bubble');
+    if (_ub) _ub.dataset.attachments = JSON.stringify({ attI: [...attI], attF: [...attF] });
+  }
   if (!currentSession) await createNewSession();  // 有内容才建会话记录
   await saveUserMsg(txt);
   inp.value = '';
@@ -725,6 +730,10 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
     _tpsStart = Date.now();
     _tokenCount = 0;
     const bubbleBase = turn === 0 ? '' : bubble.innerHTML + '\n\n';
+    // 前端实时 thinking 标记检测（避免后端缓冲延迟）
+    let _thinkEnded = false;
+    let _thinkBuf = '';
+    const THINK_MARKERS = ['<channel|>', '</think>'];
 
     while (true) {
       const { value, done } = await reader.read();
@@ -737,25 +746,87 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
         try {
           const data = JSON.parse(line.slice(6));
           if (data.type === 'reasoning') {
-            // 思考链：开关打开→折叠块，关闭→静默丢弃（不混入正文）
+            // chat_handler 原生 reasoning 分离（Gemma+mmproj 等）
             if (thinkOutputEnabled) {
               _ensureReasoningBlock(msgEl, data.content);
               _tokenCount++;
               updateMsgTps(msgEl, _tokenCount, _tpsStart);
+              msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
           } else if (data.content) {
-            turnText += data.content;
-            _tokenCount++;
-            updateMsgTps(msgEl, _tokenCount, _tpsStart);
-            // 流式渲染时隐藏可能存在的 tool_call 标签
-            const displayText = turnText.replace(/<tool_call\s+name="[^"]*">[\s\S]*<\/tool_call>/gi, '⚙️ ...');
-            bubble.innerHTML = bubbleBase + renderMarkdown(displayText);
-            msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            if (_thinkEnded) {
+              // 标记已出现 → 正文流式渲染
+              turnText += data.content;
+              _tokenCount++;
+              updateMsgTps(msgEl, _tokenCount, _tpsStart);
+              const displayText = turnText.replace(/<tool_call\s+name="[^"]*">[\s\S]*<\/tool_call>/gi, '⚙️ ...');
+              bubble.innerHTML = bubbleBase + renderMarkdown(displayText);
+              msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            } else {
+              // 累积检测 thinking 标记
+              _thinkBuf += data.content;
+              // 扫描标记
+              let markerIdx = -1, foundMarker = '';
+              for (const m of THINK_MARKERS) {
+                const idx = _thinkBuf.indexOf(m);
+                if (idx >= 0) { markerIdx = idx; foundMarker = m; break; }
+              }
+              if (markerIdx >= 0) {
+                // 找到标记 → 结束 thinking，切到正文
+                _thinkEnded = true;
+                // 收尾 think block：更新标题 + 自动折叠
+                const tb = msgEl.querySelector('.think-block');
+                if (tb) {
+                  tb.removeAttribute('open');
+                  const sum = tb.querySelector('.think-hd');
+                  if (sum) sum.textContent = '💭 思考完毕';
+                }
+                // 标记后的正文开始渲染
+                const afterMarker = _thinkBuf.substring(markerIdx + foundMarker.length);
+                _thinkBuf = '';
+                if (afterMarker) {
+                  turnText = afterMarker;
+                  _tokenCount++;
+                  updateMsgTps(msgEl, _tokenCount, _tpsStart);
+                  bubble.innerHTML = bubbleBase + renderMarkdown(turnText);
+                  msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                }
+              } else if (thinkOutputEnabled) {
+                // 无标记 → thinking 渐进渲染到折叠块
+                _ensureReasoningBlock(msgEl, data.content);
+                _tokenCount++;
+                updateMsgTps(msgEl, _tokenCount, _tpsStart);
+                msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+              } else {
+                // thinkOutputEnabled=off → 静默累积，等标记后或流结束再处理
+                _tokenCount++;
+                updateMsgTps(msgEl, _tokenCount, _tpsStart);
+              }
+            }
           }
           if (data.error) throw new Error(data.error);
         } catch (e) {
           if (e.message) throw e;
         }
+      }
+    }
+
+    // ── 流结束，thinking 缓冲区兜底 ──
+    if (!_thinkEnded && _thinkBuf) {
+      if (thinkOutputEnabled) {
+        // thinking 已渐进渲染到折叠块，收尾 + 自动折叠
+        const tb = msgEl.querySelector('.think-block');
+        if (tb) {
+          tb.removeAttribute('open');
+          const sum = tb.querySelector('.think-hd');
+          if (sum) sum.textContent = '💭 思考完毕';
+        }
+      } else {
+        // 无标记模型 + 开关关闭 → 缓冲区是正文
+        turnText += _thinkBuf;
+        const displayText = turnText.replace(/<tool_call\s+name="[^"]*">[\s\S]*<\/tool_call>/gi, '⚙️ ...');
+        bubble.innerHTML = bubbleBase + renderMarkdown(displayText);
+        msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }
     }
 
@@ -1576,10 +1647,6 @@ function regenerateMsg(btn) {
   const msgEl = btn.closest('.msg');
   if (!msgEl) return;
 
-  // 恢复附件
-  const msgBubble = msgEl.querySelector('.msg-bubble');
-  restoreAttachments(msgBubble);
-
   // Find the previous user message
   let prevUserMsg = null;
   const allMsgs = Array.from(document.querySelectorAll('.msg'));
@@ -1592,8 +1659,11 @@ function regenerateMsg(btn) {
   }
   if (!prevUserMsg) return;
 
-  const bubble = prevUserMsg.querySelector('.msg-bubble');
-  const text = bubble ? bubble.innerText.trim() : '';
+  // 从用户消息恢复附件（用户消息的 bubble.dataset.attachments 有完整数据）
+  const userBubble = prevUserMsg.querySelector('.msg-bubble');
+  restoreAttachments(userBubble);
+
+  const text = userBubble ? userBubble.innerText.trim() : '';
   if (!text) return;
 
   // Remove this assistant message and all after it
@@ -2140,11 +2210,63 @@ async function loadSessionMessages(sessionId) {
     const ct = document.getElementById('msgs');
     ct.innerHTML = '';
     for (const m of data.messages) {
-      if (m.role === 'user') addMsg('usr', m.content || '');
-      else if (m.role === 'assistant') addMsg('ast', m.content || '');
+      if (m.role === 'user') {
+        // 转换附件格式给 addMsg 渲染预览
+        const att = _formatAttachments(m.attachments);
+        const el = addMsg('usr', m.content || '', att);
+        // 用户消息的附件存 dataset（供 edit/regenerate 还原）
+        if (m.attachments && el) {
+          const bubble = el.querySelector('.msg-bubble');
+          if (bubble) bubble.dataset.attachments = JSON.stringify(m.attachments);
+        }
+      } else if (m.role === 'assistant') {
+        const el = addMsg('ast', m.content || '');
+        if (!el) continue;
+        // 还原思考链
+        if (m.reasoning_content) {
+          _rebuildThinkBlock(el, m.reasoning_content);
+        }
+        // 还原附件（assistant 消息存附件给 copy/edit/regenerate 用）
+        if (m.attachments) {
+          const bubble = el.querySelector('.msg-bubble');
+          if (bubble) bubble.dataset.attachments = JSON.stringify(m.attachments);
+        }
+      }
     }
     scroller();
   } catch (e) {}
+}
+
+// 从历史数据重建思考块（折叠状态）
+function _rebuildThinkBlock(msgEl, reasoningText) {
+  const ct = msgEl.querySelector('.ct');
+  if (!ct || !reasoningText) return;
+  const details = document.createElement('details');
+  details.className = 'think-block';
+  const summary = document.createElement('summary');
+  summary.className = 'think-hd';
+  summary.textContent = '💭 思考完毕';
+  details.appendChild(summary);
+  const div = document.createElement('div');
+  div.className = 'think-content';
+  div.textContent = reasoningText;
+  details.appendChild(div);
+  const bubble = ct.querySelector('.msg-bubble');
+  if (bubble) ct.insertBefore(details, bubble);
+  else ct.appendChild(details);
+}
+
+// 将存储的附件格式转为 addMsg 用的数组
+function _formatAttachments(attachments) {
+  if (!attachments) return [];
+  const result = [];
+  (attachments.attI || []).forEach(img => {
+    result.push({ type: 'image', preview: img.preview || img.data || '', name: img.name || 'image.jpg' });
+  });
+  (attachments.attF || []).forEach(f => {
+    result.push({ type: 'file', name: f.name || 'file' });
+  });
+  return result;
 }
 
 async function switchSession(sessionId) {
@@ -2210,28 +2332,36 @@ async function renderSessionList() {
   } catch (e) {}
 }
 
-async function saveMsg(role, content) {
+async function saveMsg(role, content, reasoning, attachments, tool_calls) {
   if (!currentSession || !currentSession.id) return;
   try {
+    const body = { role, content };
+    if (reasoning) body.reasoning_content = reasoning;
+    if (attachments && (attachments.attI?.length || attachments.attF?.length)) body.attachments = attachments;
+    if (tool_calls) body.tool_calls = tool_calls;
     await fetch('/api/sessions/' + currentSession.id + '/messages', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, content }),
+      body: JSON.stringify(body),
     });
     if (currentSession) currentSession.message_count = (currentSession.message_count||0) + 1;
   } catch (e) {}
 }
 
-function saveAssistantMsg(bubble, msgEl) {
-  if (!bubble) return;
-  // Store reasoning text from dataset
-  const reasoningText = bubble.dataset.reasoningText || _reasoningText || '';
-  const turnText = _lastTurnText || bubble.dataset.turnText || bubble.innerText || '';
-  const content = reasoningText ? (reasoningText + '\n\n---\n\n' + turnText) : turnText;
-  // Save with attachments
-  if (attI.length || attF.length) {
-    bubble.dataset.attachments = JSON.stringify({ attI: attI, attF: attF });
+function saveAssistantMsg(msgEl) {
+  if (!msgEl) return;
+  // 思考链文本：从 .msg-bubble 的 dataset 取（_ensureReasoningBlock 写入的）
+  const bubble = msgEl.querySelector('.msg-bubble');
+  const reasoningText = (bubble && bubble.dataset.reasoningText) || _reasoningText || '';
+  // 正文：_lastTurnText 是流式累积的最终正文
+  const turnText = _lastTurnText || (bubble && bubble.dataset.turnText) || bubble?.innerText || '';
+  // 分开保存思考链和正文（不拼接到 content 里）
+  const content = turnText;
+  // 附件
+  const attachments = (attI.length || attF.length) ? { attI: [...attI], attF: [...attF] } : null;
+  if (attachments && bubble) {
+    bubble.dataset.attachments = JSON.stringify(attachments);
   }
-  saveMsg('assistant', content);
+  saveMsg('assistant', content, reasoningText, attachments);
   // Clear per-turn state
   _reasoningText = '';
   _tokenCount = 0;
@@ -2240,7 +2370,8 @@ function saveAssistantMsg(bubble, msgEl) {
 
 async function saveUserMsg(txt) {
   if (!currentSession) return;
-  await saveMsg('user', txt);
+  const attachments = (attI.length || attF.length) ? { attI: [...attI], attF: [...attF] } : null;
+  await saveMsg('user', txt, null, attachments);
   // 从首条用户消息生成标题
   if (currentSession.message_count <= 2 && (!currentSession.title || currentSession.title.startsWith('202'))) {
     const title = txt.substring(0, 30) || '未命名会话';
@@ -3634,8 +3765,8 @@ function restoreAttachments(bubble) {
     var raw = bubble.dataset.attachments;
     if (!raw) return;
     var data = JSON.parse(raw);
-    attI = data.images || [];
-    attF = data.files || [];
+    attI = data.attI || data.images || [];
+    attF = data.attF || data.files || [];
     if (typeof renderAttachments === 'function') {
       renderAttachments();
     }
