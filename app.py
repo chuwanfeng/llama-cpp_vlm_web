@@ -864,6 +864,14 @@ def append_message(session_id):
     return jsonify({"id": msg_id, "ok": True})
 
 
+@app.route("/api/messages/<int:msg_id>", methods=["DELETE"])
+def delete_message(msg_id):
+    store = get_store()
+    if not store.delete_message(msg_id):
+        return _err("消息不存在", 404)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/sessions/<session_id>/messages", methods=["DELETE"])
 def clear_session_messages(session_id):
     store = get_store()

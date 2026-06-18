@@ -333,7 +333,7 @@ class SessionStore:
         msgs = self.get_messages(session_id)
         conv = []
         for m in msgs:
-            msg = {"role": m["role"], "content": m.get("content") or ""}
+            msg = {"id": m["id"], "role": m["role"], "content": m.get("content") or ""}
             if m.get("tool_call_id"):
                 msg["tool_call_id"] = m["tool_call_id"]
             if m.get("tool_name"):
@@ -348,6 +348,29 @@ class SessionStore:
                 msg["attachments"] = m["attachments"]
             conv.append(msg)
         return conv
+
+    def delete_message(self, msg_id: int) -> bool:
+        with self._lock:
+            # 先取 session_id 以便更新计数
+            row = self._conn.execute(
+                "SELECT session_id FROM messages WHERE id = ?", (msg_id,)
+            ).fetchone()
+            if not row:
+                return False
+            session_id = row["session_id"]
+            cursor = self._conn.execute("DELETE FROM messages WHERE id = ?", (msg_id,))
+            if cursor.rowcount > 0:
+                # 更新消息计数 + 时间戳
+                count_row = self._conn.execute(
+                    "SELECT COUNT(*) as cnt FROM messages WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+                self._conn.execute(
+                    "UPDATE sessions SET message_count = ?, updated_at = ? WHERE id = ?",
+                    (count_row["cnt"], _now_ts(), session_id),
+                )
+            self._conn.commit()
+            return cursor.rowcount > 0
 
     def clear_messages(self, session_id: str):
         with self._lock:

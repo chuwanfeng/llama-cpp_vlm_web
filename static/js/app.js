@@ -595,7 +595,7 @@ async function send() {
     if (_ub) _ub.dataset.attachments = JSON.stringify({ attI: [...attI], attF: [...attF] });
   }
   if (!currentSession) await createNewSession();  // 有内容才建会话记录
-  await saveUserMsg(txt);
+  await saveUserMsg(txt, userMsgEl);
   inp.value = '';
   inp.style.height = 'auto';
   const savedImages = [...attI];
@@ -1059,6 +1059,8 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
             if (event.reasoning_per_turn) {
               updateTokenDisplay(event.reasoning_per_turn);
             }
+            // 保存到数据库并绑定 msgId
+            saveAssistantMsg(msgEl);
             break;
           case 'plan':
             // ── Plan 模式：渲染计划供用户审批 ──
@@ -1640,11 +1642,14 @@ function editMsg(btn) {
   });
 }
 
-function deleteMsg(btn) {
+async function deleteMsg(btn) {
   const msgEl = btn.closest('.msg');
-  if (confirm('删除这条消息?')) {
-    msgEl.remove();
+  if (!confirm('删除这条消息?')) return;
+  const msgId = msgEl?.dataset?.msgId;
+  if (msgId) {
+    try { await fetch('/api/messages/' + msgId, { method: 'DELETE' }); } catch (e) { /* 网络失败也清UI */ }
   }
+  msgEl.remove();
 }
 
 function regenerateMsg(btn) {
@@ -1704,10 +1709,11 @@ function copyCode(btn) {
 // ──────────────────────────────────────────────────────────────────────────────
 // 消息添加
 // ──────────────────────────────────────────────────────────────────────────────
-function addMsg(role, txt, att = []) {
+function addMsg(role, txt, att = [], msgId = null) {
   const c = document.getElementById('msgs');
   const d = document.createElement('div');
   d.className = 'msg ' + (role === 'usr' ? 'usr' : 'ast');
+  if (msgId != null) d.dataset.msgId = msgId;
 
   // Content container
   const ct = document.createElement('div');
@@ -2217,14 +2223,14 @@ async function loadSessionMessages(sessionId) {
       if (m.role === 'user') {
         // 转换附件格式给 addMsg 渲染预览
         const att = _formatAttachments(m.attachments);
-        const el = addMsg('usr', m.content || '', att);
+        const el = addMsg('usr', m.content || '', att, m.id);
         // 用户消息的附件存 dataset（供 edit/regenerate 还原）
         if (m.attachments && el) {
           const bubble = el.querySelector('.msg-bubble');
           if (bubble) bubble.dataset.attachments = JSON.stringify(m.attachments);
         }
       } else if (m.role === 'assistant') {
-        const el = addMsg('ast', m.content || '');
+        const el = addMsg('ast', m.content || '', [], m.id);
         if (!el) continue;
         // 还原思考链
         if (m.reasoning_content) {
@@ -2339,18 +2345,20 @@ async function renderSessionList() {
 }
 
 async function saveMsg(role, content, reasoning, attachments, tool_calls) {
-  if (!currentSession || !currentSession.id) return;
+  if (!currentSession || !currentSession.id) return null;
   try {
     const body = { role, content };
     if (reasoning) body.reasoning_content = reasoning;
     if (attachments && (attachments.attI?.length || attachments.attF?.length)) body.attachments = attachments;
     if (tool_calls) body.tool_calls = tool_calls;
-    await fetch('/api/sessions/' + currentSession.id + '/messages', {
+    const r = await fetch('/api/sessions/' + currentSession.id + '/messages', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    const data = await r.json();
     if (currentSession) currentSession.message_count = (currentSession.message_count||0) + 1;
-  } catch (e) {}
+    return data.id || null;
+  } catch (e) { return null; }
 }
 
 function saveAssistantMsg(msgEl) {
@@ -2367,17 +2375,20 @@ function saveAssistantMsg(msgEl) {
   if (attachments && bubble) {
     bubble.dataset.attachments = JSON.stringify(attachments);
   }
-  saveMsg('assistant', content, reasoningText, attachments);
+  saveMsg('assistant', content, reasoningText, attachments).then(id => {
+    if (id && msgEl) msgEl.dataset.msgId = id;
+  });
   // Clear per-turn state
   _reasoningText = '';
   _tokenCount = 0;
   _tpsStart = 0;
 }
 
-async function saveUserMsg(txt) {
+async function saveUserMsg(txt, msgEl) {
   if (!currentSession) return;
   const attachments = (attI.length || attF.length) ? { attI: [...attI], attF: [...attF] } : null;
-  await saveMsg('user', txt, null, attachments);
+  const id = await saveMsg('user', txt, null, attachments);
+  if (id && msgEl) msgEl.dataset.msgId = id;
   // 从首条用户消息生成标题
   if (currentSession.message_count <= 2 && (!currentSession.title || currentSession.title.startsWith('202'))) {
     const title = txt.substring(0, 30) || '未命名会话';
@@ -2624,6 +2635,7 @@ function handleClarifyChoice(btn) {
   const fullMessages = [..._fullMessages, { role: 'user', content: answer }];
   const userMsgEl = addMsg('usr', answer);
   const assistantMsgEl = addMsg('ast', '');
+  saveUserMsg(answer, userMsgEl);
   sendVendor(answer, '', [], assistantMsgEl, new AbortController().signal, fullMessages);
 }
 
