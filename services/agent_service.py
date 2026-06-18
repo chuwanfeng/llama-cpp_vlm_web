@@ -350,7 +350,7 @@ def agent_chat_stream():
                         "turn": result.plan.get("turn", 1),
                     })
 
-                # ── 后台自我进化 Review ──
+                # ── 后台自我进化 Review（独立线程，不阻塞流结束）──
                 # 移植自 hermes-agent _spawn_background_review
                 # 仅在对话自然完成 + auto_review 开关启用时触发
                 if loop.auto_review and result.finished_naturally and len(messages) >= 2:
@@ -360,24 +360,33 @@ def agent_chat_stream():
                         # Review 使用与主对话相同的厂商和模型配置
                         _review_vendor_id = data.get("vendor_id", "")
                         _review_model = data.get("model") or loop.model
-                        review_result = run_review_sync(
-                            messages_snapshot=snapshot,
-                            backend_type=data.get("backend_type", "vendor"),
-                            vendor_id=_review_vendor_id,
-                            model=_review_model,
-                            review_memory=True,
-                            review_skills=True,
-                            api_key=data.get("api_key", "") or _get_vendor_creds(_review_vendor_id).get("api_key", ""),
-                            base_url=data.get("base_url"),
-                        )
-                        if review_result.summary:
-                            event_queue.put({
-                                "type": "review",
-                                "summary": review_result.summary,
-                                "actions": review_result.actions,
-                            })
+                        _review_api_key = data.get("api_key", "") or _get_vendor_creds(_review_vendor_id).get("api_key", "")
+                        _review_base_url = data.get("base_url")
+
+                        def _do_review():
+                            try:
+                                r = run_review_sync(
+                                    messages_snapshot=snapshot,
+                                    backend_type=data.get("backend_type", "vendor"),
+                                    vendor_id=_review_vendor_id,
+                                    model=_review_model,
+                                    review_memory=True,
+                                    review_skills=True,
+                                    api_key=_review_api_key,
+                                    base_url=_review_base_url,
+                                )
+                                if r.summary:
+                                    event_queue.put({
+                                        "type": "review",
+                                        "summary": r.summary,
+                                        "actions": r.actions,
+                                    })
+                            except Exception as e:
+                                logger.warning("Background review 失败: %s", e)
+
+                        threading.Thread(target=_do_review, daemon=True, name="bg-review").start()
                     except Exception as e:
-                        logger.warning("Background review 失败: %s", e)
+                        logger.warning("启动 Background review 失败: %s", e)
 
             except Exception as e:
                 logger.error("AgentLoop 流式失败: %s", e, exc_info=True)
