@@ -620,7 +620,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 /* ═════════════════════════════════════════════════════════════════════════════
    API 文档页面
    ═════════════════════════════════════════════════════════════════════════════ */
-.api-panel{padding:20px;max-width:1000px;margin:0 auto;height:100%;display:flex;flex-direction:column}
+.api-panel{padding:20px 24px 20px 20px;height:100%;display:flex;flex-direction:column}
 .api-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-shrink:0}
 .api-header h2{flex:1;font-size:20px;color:var(--text)}
 .api-filter{display:flex;gap:12px;align-items:center}
@@ -655,7 +655,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 /* ═════════════════════════════════════════════════════════════════════════════
    帮助页面
    ═════════════════════════════════════════════════════════════════════════════ */
-.help-panel{padding:24px;max-width:800px;margin:0 auto;height:100%;overflow-y:auto}
+.help-panel{padding:24px 24px 24px 24px;height:100%;overflow-y:auto}
 .help-header{margin-bottom:24px}
 .help-header h2{font-size:20px;color:var(--text)}
 .help-section{margin-bottom:32px}
@@ -670,7 +670,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 /* ═════════════════════════════════════════════════════════════════════════════
    状态监控面板
    ═════════════════════════════════════════════════════════════════════════════ */
-.monitor-panel{padding:20px;max-width:1000px;margin:0 auto;height:100%;display:flex;flex-direction:column}
+.monitor-panel{padding:20px 24px 20px 20px;height:100%;display:flex;flex-direction:column}
 .monitor-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-shrink:0}
 .monitor-header h2{flex:1;font-size:20px;color:var(--text)}
 .monitor-refresh{padding:8px 16px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:13px;cursor:pointer}
