@@ -3129,8 +3129,8 @@ function renderCronList(jobs) {
         <span class="cron-status ${j.enabled ? 'on' : 'off'}">${j.enabled ? '启用' : '禁用'}</span>
       </div>
       <div class="cron-acts">
-        <button onclick="toggleCronJob('${j.id}', ${!j.enabled})" style="padding:6px 14px;border-radius:6px;border:none;background:#3a3a3e;color:#e8e8ec;font-size:13px;cursor:pointer">${j.enabled ? '禁用' : '启用'}</button>
-        <button onclick="deleteCronJob('${j.id}')" class="danger" style="padding:6px 14px;border-radius:6px;border:none;background:#ef4444;color:#fff;font-size:13px;cursor:pointer">删除</button>
+        <button onclick="toggleCronJob('${j.id}', ${!j.enabled})" style="padding:6px 14px !important;border-radius:6px !important;border:none !important;background:#3a3a3e !important;color:#e8e8ec !important;font-size:13px !important;cursor:pointer !important">${j.enabled ? '禁用' : '启用'}</button>
+        <button onclick="deleteCronJob('${j.id}')" class="danger" style="padding:6px 14px !important;border-radius:6px !important;border:none !important;background:#ef4444 !important;color:#fff !important;font-size:13px !important;cursor:pointer !important">删除</button>
       </div>
     </div>
   `).join('');
@@ -3233,7 +3233,7 @@ function renderPluginList(plugins) {
         <p class="plugin-desc">${esc(p.description || '无描述')}</p>
       </div>
       <div class="plugin-acts">
-        <button onclick="togglePlugin('${p.id}', ${!p.enabled})" style="padding:6px 14px;border-radius:6px;border:none;background:#3a3a3e;color:#e8e8ec;font-size:13px;cursor:pointer">${p.enabled ? '禁用' : '启用'}</button>
+        <button onclick="togglePlugin('${p.id}', ${!p.enabled})" style="padding:6px 14px !important;border-radius:6px !important;border:none !important;background:#3a3a3e !important;color:#e8e8ec !important;font-size:13px !important;cursor:pointer !important">${p.enabled ? '禁用' : '启用'}</button>
       </div>
     </div>
   `).join('');
