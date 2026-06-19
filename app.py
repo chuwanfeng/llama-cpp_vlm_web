@@ -1502,7 +1502,7 @@ def api_plugins_list():
         return _err(str(e), 500)
 
 
-@app.route("/api/plugins/discover", methods=["GET"])
+@app.route("/api/plugins/discover", methods=["GET", "POST"])
 def api_plugins_discover():
     """发现可用插件"""
     try:
