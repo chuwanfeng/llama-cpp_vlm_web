@@ -3108,7 +3108,7 @@ async function loadCronJobs() {
     const r = await fetch('/api/cron/jobs');
     if (!r.ok) throw new Error('加载失败');
     const jobs = await r.json();
-    renderCronList(jobs);
+    renderCronList(jobs.jobs || []);
   } catch (e) {
     document.getElementById('cron-list').innerHTML = `<p class="err">加载失败: ${esc(e.message)}</p>`;
   }
@@ -3212,7 +3212,7 @@ async function loadPlugins() {
     const r = await fetch('/api/plugins');
     if (!r.ok) throw new Error('加载失败');
     const plugins = await r.json();
-    renderPluginList(plugins);
+    renderPluginList(plugins.plugins || []);
   } catch (e) {
     document.getElementById('plugin-list').innerHTML = `<p class="err">加载失败: ${esc(e.message)}</p>`;
   }
