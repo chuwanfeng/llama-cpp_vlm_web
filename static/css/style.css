@@ -243,7 +243,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .fg textarea#ts{min-height:220px}
 .fg input:focus,.fg textarea:focus,.fg select:focus{outline:none}
 .fa{display:flex;gap:8px;margin-top:16px}
-.fa button{padding:6px 14px;border-radius:6px;background:var(--accent);color:var(--text);font-size:13px;cursor:pointer;border:none}
+.fa button{padding:10px 20px;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;border:none}
 .fa button.pri{background:#4a6cf7;color:#fff}
 .fa button.dan{background:transparent;border:1px solid var(--danger);color:var(--danger)}
 .fa button:hover{background:var(--accent-h)}
@@ -253,7 +253,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .tr-hd{display:flex;gap:12px;align-items:center;max-width:720px;margin:0 auto;width:100%}
 .tr-hd select{padding:8px 12px;border-radius:8px;background:var(--input);color:var(--text);font-size:14px}
 .tr-hd .ar{color:var(--muted);font-size:18px}
-.tr-hd .btn{padding:8px 16px;border-radius:8px;background:var(--card);color:var(--text);font-size:14px;cursor:pointer;border:none}
+.tr-hd .btn{padding:8px 16px;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;cursor:pointer;border:none}
 .tr-hd .btn.pri{background:#4a6cf7;color:#fff}
 .tr-bd{flex:1;display:flex;flex-direction:column;gap:12px;min-height:0;max-width:720px;margin:0 auto;width:100%}
 .tr-box{display:flex;flex-direction:column}
