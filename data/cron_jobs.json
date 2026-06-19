@@ -1,21 +1,6 @@
 {
   "jobs": [
     {
-      "id": "5e7a9c51",
-      "name": "API测试",
-      "description": "",
-      "schedule": "0 9 * * *",
-      "command": "echo morning",
-      "enabled": true,
-      "created_at": "2026-06-01T03:56:31.775967+00:00",
-      "last_run": null,
-      "run_count": 0,
-      "use_agent": false,
-      "vendor_id": "",
-      "model": "",
-      "env": {}
-    },
-    {
       "id": "aa0dfd69",
       "name": "API测试",
       "description": "",

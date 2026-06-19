@@ -3181,7 +3181,7 @@ async function createCronJob() {
 async function toggleCronJob(id, enabled) {
   try {
     const r = await fetch(`/api/cron/jobs/${id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     });
