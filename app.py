@@ -1659,7 +1659,7 @@ def api_metrics():
     try:
         from services.performance_monitor import get_monitor
         monitor = get_monitor()
-        metrics = monitor.get_metrics()
+        metrics = monitor.get_all_stats()
 
         # 补充系统信息
         metrics["system"] = {
