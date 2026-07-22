@@ -731,10 +731,10 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
     _tpsStart = Date.now();
     _tokenCount = 0;
     const bubbleBase = turn === 0 ? '' : bubble.innerHTML + '\n\n';
-    // 前端实时 thinking 标记检测（避免后端缓冲延迟）
+    // 前端 thinking 分流：MiniCPM 后端 R1 缓冲已分离，其余模型靠标签检测
     let _thinkEnded = false;
     let _thinkBuf = '';
-    let _hasReasoningEvents = false;  // 是否收到过 type="reasoning"（后端已分离 thinking）
+    const _isMiniCPM = curM && curM.toLowerCase().includes('minicpm');
     const THINK_MARKERS = ['<channel|>', '</think>'];
 
     while (true) {
@@ -748,8 +748,7 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
         try {
           const data = JSON.parse(line.slice(6));
           if (data.type === 'reasoning') {
-              // chat_handler 原生 reasoning 分离（MiniCPM5 R1 等）
-              _hasReasoningEvents = true;
+            // chat_handler 原生 reasoning 分离（MiniCPM R1 后端已处理）
             if (thinkOutputEnabled) {
               _ensureReasoningBlock(msgEl, data.content);
               _tokenCount++;
@@ -757,9 +756,9 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
               msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
           } else if (data.content) {
-            // ── 两路分流：后端已分离 vs 前端切标签 ──
-            if (_hasReasoningEvents) {
-              // 后端已通过 type="reasoning" 分离了 thinking → content 是干净正文
+            // ── 两路分流：MiniCPM 直出 vs 其余模型切标签 ──
+            if (_isMiniCPM) {
+              // MiniCPM：后端 R1 缓冲已分离 thinking/content，content 是干净正文
               _thinkEnded = true;
               turnText += data.content;
               _tokenCount++;
@@ -2033,7 +2032,12 @@ async function doTr() {
   const sl = document.getElementById('sl').value;
   const tl = document.getElementById('tl').value;
   const names = { auto: '自动', ja: '日语', ko: '韩语', zh: '中文', en: '英语' };
-  const prompt = `你是专业的${names[sl]}到${names[tl]}翻译专家。只输出翻译结果。\n\n${txt}`;
+  // 用 --- 段落分隔指令和数据，兼容所有模型（部分模型的 system role 实现有 bug）
+  const prompt = `将以下${names[sl]}文本翻译成${names[tl]}，只输出译文：
+
+---
+${txt}
+---`;
   const out = document.getElementById('to');
   out.value = '';
   if (backendType === 'llama-cpp') {
