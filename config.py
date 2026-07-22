@@ -12,16 +12,24 @@ MODELS_DIR = r"D:\Scoop\LLM"
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 # ─── GPU (llama-cpp-python) ──────────────────────────────────────────────────
-GPU_DEFAULT_CTX = 8192
+GPU_DEFAULT_CTX = 32768
 GPU_DEFAULT_LAYERS = 0  # -1 = 全部
 GPU_DEFAULT_MAX_TOKENS = 4096
+
+# ─── 性能优化 (llama-cpp-python >= 0.3.0) ─────────────────────────────────
+GPU_N_BATCH = int(os.environ.get("GPU_N_BATCH", 512))    # 批量 prompt 处理
+GPU_N_UBATCH = int(os.environ.get("GPU_N_UBATCH", 512))   # 微批量大小
+GPU_FLASH_ATTN = os.environ.get("GPU_FLASH_ATTN", "1") == "1"  # Flash Attention
+GPU_KV_CACHE_DTYPE = os.environ.get("GPU_KV_CACHE_DTYPE", "")  # q8_0/q4_0/f16 等
+GPU_OFFLOAD_KQV = os.environ.get("GPU_OFFLOAD_KQV", "1") == "1"  # 把 KQV 也 offload 到 GPU
+GPU_CHAT_FORMAT = os.environ.get("GPU_CHAT_FORMAT", "")  # 空=自动从 GGUF 元数据检测
 
 # ─── 上下文扩展 (RoPE Scaling) ──────────────────────────────────────────────
 # 本地模型默认 8K，可通过 RoPE 扩展到更长上下文
 # 支持的 scaling 类型: "none", "linear", "yarn"
 GPU_ROPE_SCALING = os.environ.get("GPU_ROPE_SCALING", "yarn")  # none|linear|yarn
 GPU_ROPE_FREQ_BASE = float(os.environ.get("GPU_ROPE_FREQ_BASE", 0))  # 0=自动
-GPU_ROPE_SCALE = float(os.environ.get("GPU_ROPE_SCALE", 2.0))  # 扩展倍数: 8K→16K=2.0
+GPU_ROPE_SCALE = float(os.environ.get("GPU_ROPE_SCALE", 4.0))  # 扩展倍数: 8K→32K=4.0
 # 模型家族对应的推荐 RoPE freq_base
 FAMILY_ROPE_BASE = {
     "gemma4": 10000.0,  # Gemma-4 默认 10K
@@ -30,6 +38,7 @@ FAMILY_ROPE_BASE = {
     "qwen3": 1000000.0,  # Qwen3 默认 1M
     "qwen25": 1000000.0,  # Qwen2.5 默认 1M
     "llama4": 500000.0,  # LLaMA 4
+    "minicpm": 1000000.0,  # MiniCPM R1-thinking 默认 1M
 }
 
 # ─── 推理参数默认值 ──────────────────────────────────────────────────────────

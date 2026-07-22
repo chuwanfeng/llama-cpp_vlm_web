@@ -57,6 +57,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         技能
       </div>
+      <div class="nav" data-n="generation" onclick="nav('generation')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/></svg>
+        生成
+      </div>
       <div class="nav" data-n="cron" onclick="nav('cron')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         定时任务
@@ -65,14 +69,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         插件
       </div>
-      <div class="nav" data-n="api-docs" onclick="nav('api-docs')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
-        API 文档
-      </div>
-      <div class="nav" data-n="help" onclick="nav('help')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg>
-        帮助
-      </div>
       <div class="nav" data-n="monitor" onclick="nav('monitor')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         监控
@@ -80,10 +76,6 @@
       <div class="nav" data-n="approval-page" onclick="nav('approval-page')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         审批
-      </div>
-      <div class="nav" data-n="logs" onclick="nav('logs')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-        日志
       </div>
       <div class="nav" data-n="settings" onclick="nav('settings')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"/></svg>
@@ -94,7 +86,6 @@
       <h3>历史会话</h3>
       <div id="session-list"></div>
     </div>
-    <div style="flex:1"></div>
     <div class="st-row">
       <div class="st-dot" id="st-dot"></div>
       <span id="st-txt">检测中...</span>
@@ -463,6 +454,53 @@
               <button onclick="doSearch(document.getElementById('sr-query').value)">搜索</button>
             </div>
             <div id="search-results"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 生成面板 -->
+    <div class="panel" id="p-generation">
+      <div class="gen-panel" style="padding:24px;max-width:800px;overflow-y:auto;height:100%">
+        <h2 style="margin:0 0 16px">🎨 图片/视频生成配置</h2>
+
+        <!-- ComfyUI URL -->
+        <div class="gen-sec" style="background:var(--card-bg, #1e1e2e);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="margin:0 0 12px;font-size:14px;color:var(--muted)">ComfyUI 连接</h3>
+          <div class="s-row"><label>本地</label><input type="text" id="gen-local-comfyui" placeholder="http://127.0.0.1:8188" style="flex:1;max-width:420px"><span style="font-size:11px;color:var(--muted);margin-left:4px">图片</span></div>
+          <div class="s-row"><label>云端图片</label><input type="text" id="gen-cloud-image" placeholder="http://your-server:8188" style="flex:1;max-width:420px" oninput="onCloudImageChange()"></div>
+          <div class="s-row">
+            <label>云端视频</label>
+            <input type="text" id="gen-cloud-video" placeholder="http://your-server:8188" style="flex:1;max-width:420px">
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap">
+              <input type="checkbox" id="gen-video-same-as-image" checked onchange="onVideoSameToggle()"> 同图片
+            </label>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--muted)">留空则仅使用本地 ComfyUI。</div>
+          <button class="s-save" onclick="reloadGeneration()" style="margin-top:12px">🔄 重载后端</button>
+          <span id="gen-reload-msg" style="margin-left:10px;font-size:12px"></span>
+        </div>
+
+        <!-- 后端状态 -->
+        <div class="gen-sec" style="background:var(--card-bg, #1e1e2e);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="margin:0 0 12px;font-size:14px;color:var(--muted)">后端状态</h3>
+          <div id="gen-providers-status" style="font-size:13px;line-height:1.8">加载中...</div>
+        </div>
+
+        <!-- 自定义工作流 -->
+        <div class="gen-sec" style="background:var(--card-bg, #1e1e2e);border-radius:12px;padding:20px;margin-bottom:16px">
+          <h3 style="margin:0 0 12px;font-size:14px;color:var(--muted)">⚡ 自定义工作流</h3>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+            注册云端 ComfyUI 上的自定义工作流 (如 <code>z-image-turo</code>, <code>ltx2.3</code>)。
+            LLM 会自动按名称匹配工作流。
+          </div>
+          <div id="gen-workflow-list" style="margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="gen-wf-name" placeholder="工作流名称 (例: z-image-turo)" style="width:180px">
+            <select id="gen-wf-type" style="width:100px"><option value="image">图片</option><option value="video">视频</option></select>
+            <input type="text" id="gen-wf-display" placeholder="显示名称 (可选)" style="width:150px">
+            <input type="file" id="gen-wf-file" accept=".json" style="width:200px">
+            <button class="s-save" onclick="addWorkflow()">+ 添加</button>
           </div>
         </div>
       </div>

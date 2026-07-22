@@ -617,10 +617,11 @@ async function send() {
   sbtn.style.display = 'none';
   stbtn.style.display = 'flex';
 
-  // 上下文压缩
+  // 上下文压缩（llama-cpp 用 8K 窗口，厂商用 128K）
   _compressedMsgs = null;
   if (isVendorBackend(backendType) || backendType === 'llama-cpp') {
-    _compressedMsgs = await maybeCompress(131072);
+    const ctxLen = backendType === 'llama-cpp' ? 32768 : 131072;
+    _compressedMsgs = await maybeCompress(ctxLen);
     if (_compressedMsgs) {
       addSystemMsg('⚡ 上下文已压缩（节省 token）', 'compressed');
     }
@@ -733,6 +734,7 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
     // 前端实时 thinking 标记检测（避免后端缓冲延迟）
     let _thinkEnded = false;
     let _thinkBuf = '';
+    let _hasReasoningEvents = false;  // 是否收到过 type="reasoning"（后端已分离 thinking）
     const THINK_MARKERS = ['<channel|>', '</think>'];
 
     while (true) {
@@ -746,7 +748,8 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
         try {
           const data = JSON.parse(line.slice(6));
           if (data.type === 'reasoning') {
-            // chat_handler 原生 reasoning 分离（Gemma+mmproj 等）
+              // chat_handler 原生 reasoning 分离（MiniCPM5 R1 等）
+              _hasReasoningEvents = true;
             if (thinkOutputEnabled) {
               _ensureReasoningBlock(msgEl, data.content);
               _tokenCount++;
@@ -754,7 +757,17 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
               msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
           } else if (data.content) {
-            if (_thinkEnded) {
+            // ── 两路分流：后端已分离 vs 前端切标签 ──
+            if (_hasReasoningEvents) {
+              // 后端已通过 type="reasoning" 分离了 thinking → content 是干净正文
+              _thinkEnded = true;
+              turnText += data.content;
+              _tokenCount++;
+              updateMsgTps(msgEl, _tokenCount, _tpsStart);
+              const displayText = turnText.replace(/<tool_call\s+name="[^"]*">[\s\S]*<\/tool_call>/gi, '⚙️ ...');
+              bubble.innerHTML = bubbleBase + renderMarkdown(displayText);
+              msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            } else if (_thinkEnded) {
               // 标记已出现 → 正文流式渲染
               turnText += data.content;
               _tokenCount++;
@@ -763,7 +776,7 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
               bubble.innerHTML = bubbleBase + renderMarkdown(displayText);
               msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
             } else {
-              // 累积检测 thinking 标记
+              // 累积检测 thinking 标记（Gemma4/Qwen 混合在 content 中）
               _thinkBuf += data.content;
               // 扫描标记
               let markerIdx = -1, foundMarker = '';
@@ -805,6 +818,13 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
             }
           }
           if (data.error) throw new Error(data.error);
+          // ── 工具事件（服务端已执行，前端同步显示进度）──
+          if (data.type === 'tool_call') {
+            displayToolCall(msgEl, data.name, data.args);
+          }
+          if (data.type === 'tool_result') {
+            displayToolResult(msgEl, data.name, { content: data.result });
+          }
         } catch (e) {
           if (e.message) throw e;
         }
@@ -2363,6 +2383,9 @@ async function saveMsg(role, content, reasoning, attachments, tool_calls) {
 
 function saveAssistantMsg(msgEl) {
   if (!msgEl) return;
+  // 防重复：已保存过的消息跳过（vendor done 事件 + send() finally 双重调用）
+  if (msgEl.dataset.msgSaved === '1') return;
+  msgEl.dataset.msgSaved = '1';
   // 思考链文本：从 .msg-bubble 的 dataset 取（_ensureReasoningBlock 写入的）
   const bubble = msgEl.querySelector('.msg-bubble');
   const reasoningText = (bubble && bubble.dataset.reasoningText) || _reasoningText || '';
@@ -2473,12 +2496,16 @@ async function doSearch(query) {
 
 // 粗略估算消息 token 数 (~4 chars/token)
 function estimateTokens(messages) {
+  // 中文字符约 1.5 token/字，英文约 0.25 token/字
+  // 分别计数避免严重低估中文
   let total = 0;
   for (const m of messages) {
     const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-    total += c.length;
+    const cjk = (c.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef]/g) || []).length;
+    const other = c.length - cjk;
+    total += cjk * 1.5 + other * 0.25;
   }
-  return Math.ceil(total / 4);
+  return Math.ceil(total);
 }
 
 // 从 DOM 提取完整对话历史
@@ -2601,7 +2628,11 @@ function displayToolResult(msgEl, toolName, result) {
   const isErr = result && result.error;
   const div = document.createElement('div');
   div.className = 'tool-ind ' + (isErr ? 'tool-err' : 'tool-result');
-  div.innerHTML = `<span class="tool-icon">${isErr ? '❌' : '📋'}</span> <strong>${esc(toolName)}</strong> <span class="tool-out">${esc(resultText)}</span>`;
+  // 工具结果用 renderMarkdown 渲染，图片转为缩略小图，避免和 LLM 回复中的图片重复冲突
+  let displayHtml = renderMarkdown(resultText);
+  // 将工具结果中的全尺寸图片转为缩略图
+  displayHtml = displayHtml.replace(/<img\s+src="([^"]+)"/g, '<img src="$1" class="tool-thumb" style="max-width:120px;max-height:120px;border-radius:4px;margin:4px 0"');
+  div.innerHTML = `<span class="tool-icon">${isErr ? '❌' : '📋'}</span> <strong>${esc(toolName)}</strong> <span class="tool-out">${displayHtml}</span>`;
   ct.appendChild(div);
   msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
@@ -3803,11 +3834,17 @@ function renderMarkdown(text) {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
+  // ── 图片（必须在链接之前，否则 ![]() 的 []() 部分会被链接正则抢先匹配）──
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">');
+
   // ── 链接 ──
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
-  // ── 图片 ──
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">');
+  // ── 自动渲染图片 URL（排除已在 src=" 内的，防止嵌套 <img>）──
+  // ComfyUI /view 链接
+  html = html.replace(/(?<!src=["'])(https?:\/\/[^\s<>"']*\/view\?[^\s<>"']*filename=[^\s<>"'&\s]+[^\s<>"']*)/gi, '<img src="$1" alt="Generated" loading="lazy" class="auto-img">');
+  // 图片后缀 URL
+  html = html.replace(/(?<!src=["'])(https?:\/\/[^\s<>"']+?\.(?:png|jpg|jpeg|webp|gif|bmp))(\?[^\s<>"']*)?(?=[\s<>]|$)/gi, '<img src="$1$2" alt="Image" loading="lazy" class="auto-img">');
 
   // ── 分段（双换行 → 段落）──
   html = '<p>' + html.replace(/\n\n/g, '</p><p>') + '</p>';
@@ -3933,8 +3970,209 @@ nav = function(n) {
   } else if (n === 'logs') {
     startLogStream();
     document.getElementById('pg-ttl').textContent = '日志查看器';
+  } else if (n === 'generation') {
+    loadGenerationConfig();
+    document.getElementById('pg-ttl').textContent = '图片/视频生成配置';
   } else {
     stopMonitor();
     stopLogStream();
   }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 图片/视频生成配置
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function loadGenerationConfig() {
+  try {
+    const r = await fetch('/api/generation/config');
+    const cfg = await r.json();
+
+    // ComfyUI URLs
+    document.getElementById('gen-local-comfyui').value = (cfg.image && cfg.image.local_comfyui_url) || 'http://127.0.0.1:8188';
+    document.getElementById('gen-cloud-image').value = (cfg.image && cfg.image.cloud_comfyui_url) || '';
+
+    const videoUrl = (cfg.video && cfg.video.cloud_comfyui_url) || '';
+    const imageUrl = (cfg.image && cfg.image.cloud_comfyui_url) || '';
+    const isSame = !videoUrl || videoUrl === imageUrl;
+    document.getElementById('gen-video-same-as-image').checked = isSame;
+    document.getElementById('gen-cloud-video').value = isSame ? imageUrl : videoUrl;
+    document.getElementById('gen-cloud-video').disabled = isSame;
+
+    // 后端状态
+    renderGenerationStatus(cfg.runtime || {});
+
+    // 工作流列表
+    renderWorkflowList(cfg.workflows || {});
+  } catch (e) {
+    document.getElementById('gen-providers-status').innerHTML = '<span style="color:red">加载失败: ' + e.message + '</span>';
+  }
+}
+
+function renderGenerationStatus(rt) {
+  let html = '';
+  const imgProviders = rt.image_providers || [];
+  const vidProviders = rt.video_providers || [];
+
+  if (imgProviders.length === 0 && vidProviders.length === 0) {
+    html = '<span style="color:var(--muted)">无注册后端</span>';
+  } else {
+    html += '<div style="margin-bottom:8px;color:var(--muted);font-weight:600">图片后端:</div>';
+    for (const p of imgProviders) {
+      const color = p.available ? '#4ade80' : '#f87171';
+      const icon = p.available ? '✅' : '❌';
+      const active = p.name === rt.active_image ? ' <b>(活跃)</b>' : '';
+      html += `<div>${icon} ${p.name} (${p.display}) — 模型: ${(p.models||[]).length}${active}</div>`;
+    }
+    html += '<div style="margin:12px 0 8px;color:var(--muted);font-weight:600">视频后端:</div>';
+    for (const p of vidProviders) {
+      const color = p.available ? '#4ade80' : '#f87171';
+      const icon = p.available ? '✅' : '❌';
+      const active = p.name === rt.active_video ? ' <b>(活跃)</b>' : '';
+      html += `<div>${icon} ${p.name} (${p.display}) — 模型: ${(p.models||[]).length}${active}</div>`;
+    }
+  }
+  document.getElementById('gen-providers-status').innerHTML = html;
+}
+
+function renderWorkflowList(workflows) {
+  const el = document.getElementById('gen-workflow-list');
+  const entries = Object.entries(workflows);
+  if (entries.length === 0) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px">暂无自定义工作流。通过下方的表单添加 JSON 文件。</div>';
+    return;
+  }
+  let html = '<div style="display:flex;flex-direction:column;gap:6px">';
+  for (const [name, wf] of entries) {
+    const wtype = wf.type || 'image';
+    const disp = wf.display_name || name;
+    html += `<div style="display:flex;align-items:center;gap:8px;background:var(--bg,#1a1a2e);padding:6px 10px;border-radius:6px;font-size:13px">
+      <b>${disp}</b>
+      <span style="color:var(--muted)">(${wtype})</span>
+      <button onclick="deleteWorkflow('${name}')" style="margin-left:auto;color:#f87171;background:none;border:1px solid #f87171;border-radius:4px;cursor:pointer;font-size:11px;padding:2px 6px">删除</button>
+    </div>`;
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+async function reloadGeneration() {
+  // 计算视频 URL
+  const sameChecked = document.getElementById('gen-video-same-as-image').checked;
+  const imageCloudUrl = document.getElementById('gen-cloud-image').value.trim();
+  const videoUrl = sameChecked ? imageCloudUrl : document.getElementById('gen-cloud-video').value.trim();
+
+  const imgCfg = {
+    image: {
+      local_comfyui_url: document.getElementById('gen-local-comfyui').value.trim(),
+      cloud_comfyui_url: imageCloudUrl,
+    },
+    video: {
+      cloud_comfyui_url: videoUrl,
+    },
+  };
+
+  const msgEl = document.getElementById('gen-reload-msg');
+  msgEl.textContent = '保存中...';
+  try {
+    await fetch('/api/generation/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(imgCfg),
+    });
+    msgEl.textContent = '重载中...';
+
+    const r = await fetch('/api/generation/reload', { method: 'POST' });
+    const result = await r.json();
+    msgEl.textContent = `已重载: ${result.image_providers} 图片 + ${result.video_providers} 视频后端`;
+    msgEl.style.color = '#4ade80';
+
+    // 重新加载状态
+    await loadGenerationConfig();
+  } catch (e) {
+    msgEl.textContent = '失败: ' + e.message;
+    msgEl.style.color = '#f87171';
+  }
+}
+
+async function addWorkflow() {
+  const nameEl = document.getElementById('gen-wf-name');
+  const typeEl = document.getElementById('gen-wf-type');
+  const dispEl = document.getElementById('gen-wf-display');
+  const fileEl = document.getElementById('gen-wf-file');
+
+  const name = nameEl.value.trim();
+  if (!name) { alert('请输入工作流名称'); return; }
+
+  const wtype = typeEl.value;
+  const display = dispEl.value.trim() || name;
+
+  let workflow = null;
+  if (fileEl.files && fileEl.files[0]) {
+    const text = await fileEl.files[0].text();
+    try {
+      workflow = JSON.parse(text);
+    } catch (e) {
+      alert('JSON 文件解析失败: ' + e.message);
+      return;
+    }
+  } else {
+    // 手动输入模式 — 弹出 textarea
+    const jsonStr = prompt('粘贴工作流 JSON (或留空,稍后在 settings.json 中手动编辑):');
+    if (!jsonStr) return;
+    try {
+      workflow = JSON.parse(jsonStr);
+    } catch (e) {
+      alert('JSON 解析失败: ' + e.message);
+      return;
+    }
+  }
+
+  try {
+    const r = await fetch('/api/generation/workflows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, type: wtype, display_name: display, workflow }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Unknown error');
+    nameEl.value = '';
+    dispEl.value = '';
+    fileEl.value = '';
+    await loadGenerationConfig();
+  } catch (e) {
+    alert('添加工作流失败: ' + e.message);
+  }
+}
+
+async function deleteWorkflow(name) {
+  if (!confirm('删除工作流 ' + name + '?')) return;
+  try {
+    await fetch('/api/generation/workflows?name=' + encodeURIComponent(name), { method: 'DELETE' });
+    await loadGenerationConfig();
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  }
+}
+
+function onVideoSameToggle() {
+  const checked = document.getElementById('gen-video-same-as-image').checked;
+  const videoInput = document.getElementById('gen-cloud-video');
+  videoInput.disabled = checked;
+  if (checked) {
+    videoInput.value = document.getElementById('gen-cloud-image').value.trim();
+  }
+}
+
+function onCloudImageChange() {
+  if (document.getElementById('gen-video-same-as-image').checked) {
+    document.getElementById('gen-cloud-video').value = document.getElementById('gen-cloud-image').value.trim();
+  }
+}
+
+// ── 对话历史加载时自动更新生成配置 ──
+// (确保生成面板在首次打开时数据已就绪)
+const _origLoadChat = loadChat || function(){};
+if (typeof loadChat === 'function') {
+  const _orig = loadChat;
+  loadChat = function() { _orig(); loadGenerationConfig(); };
+}

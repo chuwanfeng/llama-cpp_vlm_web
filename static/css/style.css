@@ -20,6 +20,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .col-btn{width:28px;height:28px;border:none;border-radius:6px;background:0;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
 .col-btn:hover{background:var(--sidebar-hover);color:var(--text)}
 .sb-sec{padding:12px}
+#session-section{flex:1;overflow-y:auto;min-height:0}
+#session-section::-webkit-scrollbar{width:6px}
+#session-section::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .sb-sec h3{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.5px;margin-bottom:8px;padding:0 4px}
 
 /* Model select */
@@ -335,6 +338,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .tool-ind strong{flex-shrink:0}
 .tool-args{color:#a5b4fc;word-break:break-all;font-family:monospace;font-size:11px}
 .tool-out{color:#86efac;word-break:break-word;font-size:11px;max-height:200px;overflow-y:auto}
+.tool-out img{max-width:120px;max-height:120px;border-radius:6px}
+
+/* ── 生成面板 ── */
+.gen-panel h2{color:var(--text)}
+.gen-panel h3{color:var(--text)}
+.gen-panel label{color:var(--text2)}
+.gen-panel input[type=text],.gen-panel input[type=password],.gen-panel select{color:var(--text);background:var(--input);border:1px solid var(--border)}
+.gen-panel code{color:#e2a0ff;background:var(--input);padding:1px 5px;border-radius:3px;font-size:12px}
+.gen-sec{color:var(--text)}
+
+/* ── 聊天区图片 ── */
+.msg-bubble img,.msg-bubble .auto-img{max-width:min(512px,100%);max-height:512px;border-radius:8px;display:block;margin:8px 0}
 
 /* ── Clarify Request ──────────────────────────────────────────── */
 .clarify-req{display:flex;gap:10px;padding:12px 14px;background:#1a1a2e;border:1px solid var(--accent);border-radius:8px;margin:8px 0;flex-wrap:wrap}
