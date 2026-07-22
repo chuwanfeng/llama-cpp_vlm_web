@@ -582,83 +582,11 @@ class AgentLoop:
                     )
 
                 # 执行每个工具调用
-                for tc in tool_calls:
-                    tool_name = tc.get("function", {}).get("name", "")
-                    tool_args_raw = tc.get("function", {}).get("arguments", "{}")
-                    tc_id = tc.get("id", f"call_{uuid.uuid4().hex[:8]}")
-
-                    # 参数解析
-                    args = None
-                    tool_result = None
-
-                    # 验证工具名
-                    if tool_name not in self.valid_tool_names:
-                        tool_result = json.dumps({
-                            "error": f"未知工具 '{tool_name}'。可用工具: {sorted(self.valid_tool_names)}"
-                        })
-                        tool_errors.append(ToolError(
-                            turn=turn + 1,
-                            tool_name=tool_name,
-                            arguments=tool_args_raw[:200],
-                            error=f"未知工具 '{tool_name}'",
-                            tool_result=tool_result[:500],
-                        ))
-                        logger.warning("模型调用了未知工具 '%s'", tool_name)
-                    else:
-                        # 解析参数
-                        try:
-                            if isinstance(tool_args_raw, str):
-                                args = json.loads(tool_args_raw)
-                            else:
-                                args = tool_args_raw
-                        except json.JSONDecodeError as e:
-                            tool_result = json.dumps({
-                                "error": f"工具参数 JSON 解析失败: {e}。请使用有效 JSON。"
-                            })
-                            tool_errors.append(ToolError(
-                                turn=turn + 1,
-                                tool_name=tool_name,
-                                arguments=tool_args_raw[:200],
-                                error=f"JSON 解析失败: {e}",
-                                tool_result=tool_result[:500],
-                            ))
-                            logger.warning("工具 '%s' 参数解析失败: %s", tool_name, tool_args_raw[:200])
-
-                        # 执行工具
-                        if args is not None:
-                            try:
-                                # 通知前端:开始执行工具
-                                if on_tool_call:
-                                    on_tool_call(tool_name, json.dumps(args))
-                                tool_start = time.monotonic()
-                                tool_result = await self._execute_tool(tool_name, args)
-                                tool_elapsed = time.monotonic() - tool_start
-                                logger.info(
-                                    "[%s]   工具 %s 执行完成 (%.2fs)",
-                                    self.task_id, tool_name, tool_elapsed
-                                )
-                                # 通知前端:工具执行完成
-                                if on_tool_result:
-                                    on_tool_result(tool_name, tool_result)
-                            except Exception as e:
-                                tool_result = json.dumps({
-                                    "error": f"工具执行失败: {type(e).__name__}: {str(e)}"
-                                })
-                                tool_errors.append(ToolError(
-                                    turn=turn + 1,
-                                    tool_name=tool_name,
-                                    arguments=json.dumps(args)[:200],
-                                    error=f"{type(e).__name__}: {str(e)}",
-                                    tool_result=tool_result[:500],
-                                ))
-                                logger.error("工具 '%s' 执行失败 (turn %d): %s", tool_name, turn + 1, e)
-
-                    # 追加工具结果到消息历史
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc_id,
-                        "content": tool_result or "",
-                    })
+                # ── 并发工具执行 (优化: 多工具并行) ──
+                self._execute_tools_with_cache(
+                    tool_calls, messages, tool_errors, turn,
+                    on_tool_call, on_tool_result
+                )
 
                 turn_elapsed = time.monotonic() - turn_start
                 logger.info(
@@ -1033,6 +961,158 @@ class AgentLoop:
         if usage:
             resp["usage"] = usage
         return resp
+
+    def _execute_tools_with_cache(
+        self, tool_calls: list, messages: list, tool_errors: list,
+        turn: int, on_tool_call=None, on_tool_result=None
+    ):
+        """
+        并发执行多个工具调用,含 lookaside 缓存
+
+        流程:
+          1. 解析参数,验证工具名
+          2. 对可缓存工具检查 LRU 缓存
+          3. 剩余工具通过 ThreadPoolExecutor 并发执行
+          4. 收集结果,追加到 messages
+        """
+        from agent.tool_executor import execute_tools_concurrent
+        from services.cache_manager import get_cache
+        import asyncio
+
+        cache = get_cache()
+        validated_calls = []  # [(tc, tool_name, args, tc_id), ...]
+
+        for tc in tool_calls:
+            tool_name = tc.get("function", {}).get("name", "")
+            tool_args_raw = tc.get("function", {}).get("arguments", "{}")
+            tc_id = tc.get("id", f"call_{uuid.uuid4().hex[:8]}")
+
+            # 验证工具名
+            if tool_name not in self.valid_tool_names:
+                err = json.dumps({
+                    "error": f"未知工具 '{tool_name}'。可用工具: {sorted(self.valid_tool_names)}"
+                })
+                tool_errors.append(ToolError(
+                    turn=turn + 1, tool_name=tool_name,
+                    arguments=tool_args_raw[:200],
+                    error=f"未知工具 '{tool_name}'",
+                    tool_result=err[:500],
+                ))
+                messages.append({
+                    "role": "tool", "tool_call_id": tc_id, "content": err
+                })
+                logger.warning("模型调用了未知工具 '%s'", tool_name)
+                continue
+
+            # 解析参数
+            try:
+                if isinstance(tool_args_raw, str):
+                    args = json.loads(tool_args_raw)
+                else:
+                    args = tool_args_raw
+            except json.JSONDecodeError as e:
+                err = json.dumps({
+                    "error": f"工具参数 JSON 解析失败: {e}。请使用有效 JSON。"
+                })
+                tool_errors.append(ToolError(
+                    turn=turn + 1, tool_name=tool_name,
+                    arguments=tool_args_raw[:200],
+                    error=f"JSON 解析失败: {e}",
+                    tool_result=err[:500],
+                ))
+                messages.append({
+                    "role": "tool", "tool_call_id": tc_id, "content": err
+                })
+                logger.warning("工具 '%s' 参数解析失败: %s", tool_name, tool_args_raw[:200])
+                continue
+
+            validated_calls.append((tc, tool_name, args, tc_id))
+
+        # 分离缓存命中和需要执行的调用
+        cached_results = {}  # tc_index → result
+        execute_calls = []   # tc objects to execute
+
+        for i, (tc, tool_name, args, tc_id) in enumerate(validated_calls):
+            cached = cache.get_tool_result(tool_name, args)
+            if cached is not None:
+                cached_results[i] = cached
+                logger.debug("[%s]   🔄 缓存命中: %s", self.task_id, tool_name)
+            else:
+                # 为并发执行准备 args(已经是 dict)
+                tc["function"]["arguments"] = args
+                # 注入父代理引用
+                if tool_name in ("delegate_task", "skill_evolve"):
+                    tc["function"]["arguments"] = {**args, "parent_agent": self}
+                execute_calls.append(tc)
+
+        # 并发执行需要调用的工具
+        execute_results = {}
+        if execute_calls:
+            n_tools = len(execute_calls)
+            if n_tools > 1:
+                logger.info("[%s] ⚡ 并发执行 %d 个工具", self.task_id, n_tools)
+
+            # 通知前端
+            if on_tool_call:
+                for tc in execute_calls:
+                    tn = tc.get("function", {}).get("name", "")
+                    ta = tc.get("function", {}).get("arguments", {})
+                    on_tool_call(tn, json.dumps(ta))
+
+            tool_start = time.monotonic()
+            results = execute_tools_concurrent(execute_calls)
+            tool_elapsed = time.monotonic() - tool_start
+
+            for tc, result in results:
+                key = id(tc)
+                execute_results[key] = result
+                tn = tc.get("function", {}).get("name", "")
+                ta = tc.get("function", {}).get("arguments", {})
+
+                # 缓存可缓存的工具结果
+                cache.set_tool_result(tn, ta, result)
+
+                # 错误跟踪
+                if '"error"' in result or '"error":' in result:
+                    err_msg = result[:500]
+                    tool_errors.append(ToolError(
+                        turn=turn + 1, tool_name=tn,
+                        arguments=json.dumps(ta)[:200],
+                        error="execution error",
+                        tool_result=err_msg,
+                    ))
+
+            if n_tools > 1:
+                logger.info(
+                    "[%s]   ✅ %d 工具执行完成 (%.2fs)",
+                    self.task_id, n_tools, tool_elapsed
+                )
+            else:
+                tn = execute_calls[0].get("function", {}).get("name", "")
+                logger.info(
+                    "[%s]   工具 %s 执行完成 (%.2fs)",
+                    self.task_id, tn, tool_elapsed
+                )
+
+        # 按原始顺序追加结果到 messages
+        for i, (tc, tool_name, args, tc_id) in enumerate(validated_calls):
+            result = None
+            if i in cached_results:
+                result = cached_results[i]
+            else:
+                result = execute_results.get(id(tc), json.dumps({
+                    "error": f"工具 '{tool_name}' 未执行"
+                }))
+
+            # 通知前端
+            if on_tool_result:
+                on_tool_result(tool_name, result)
+
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc_id,
+                "content": result or "",
+            })
 
     async def _execute_tool(self, tool_name: str, args: Dict) -> str:
         """

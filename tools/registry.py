@@ -110,13 +110,23 @@ class ToolEntry:
         return _check_fn_cached(self.check_fn)
 
     def to_openai_schema(self) -> Dict[str, Any]:
-        """转换为 OpenAI function-calling 格式。"""
+        """转换为 OpenAI function-calling 格式。
+
+        兼容两种 schema 格式：
+        1. 纯参数定义: {"type": "object", "properties": {...}}
+        2. 完整工具定义: {"name": "...", "description": "...", "parameters": {"type": "object", ...}}
+        """
+        # 自动提取 parameters 子字典（兼容 image_generate/video_generate 的完整定义格式）
+        params = self.schema.get("parameters", None)
+        if params is None:
+            # 纯参数定义格式：整个 schema 就是 parameters
+            params = self.schema
         return {
             "type": "function",
             "function": {
                 "name": self.name,
                 "description": self.description,
-                "parameters": self.schema,
+                "parameters": params,
             },
         }
 
@@ -294,6 +304,37 @@ class ToolRegistry:
             return str(result)
         except Exception as e:
             logger.error("Tool %s failed: %s", name, e, exc_info=True)
+            return f"Error executing {name}: {e}"
+
+    def execute_sync(self, name: str, params: Dict[str, Any]) -> str:
+        """同步执行工具（供 ThreadPoolExecutor 并发调用）。
+
+        如果 handler 是异步的，通过 asyncio.run() 桥接。
+        """
+        import asyncio
+        entry = self._tools.get(name)
+        if entry is None:
+            raise ValueError(f"Tool not found: {name}")
+        if not entry.is_available():
+            raise RuntimeError(f"Tool {name} is not available")
+        try:
+            result = entry.handler(**params)
+            if hasattr(result, "__await__"):
+                # 在当前线程创建一个临时 event loop 来运行
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+                if loop is not None:
+                    # 有运行中的 loop,用 run_coroutine_threadsafe
+                    import concurrent.futures
+                    future = asyncio.run_coroutine_threadsafe(result, loop)
+                    result = future.result(timeout=60)
+                else:
+                    result = asyncio.run(result)
+            return str(result)
+        except Exception as e:
+            logger.error("Tool %s failed (sync): %s", name, e, exc_info=True)
             return f"Error executing {name}: {e}"
 
     # ── Toolset ──────────────────────────────────────────────────

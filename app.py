@@ -51,6 +51,10 @@ discover_tools()  # 启动时即加载所有 builtin 工具 + MCP 服务器工�
 from tools.process_registry import register_process_tool
 register_process_tool()
 
+# ─── 图片/视频生成后端初始化 ───────────────────────────────────────────────────
+from plugins import init_all_providers
+init_all_providers()
+
 # ─── MCP 服务器状态 ──────────────────────────────────────────────────────────
 from tools.mcp_tool import get_mcp_status, shutdown_mcp_servers
 import atexit
@@ -243,6 +247,91 @@ def api_aux_config():
         except Exception as e:
             log.error("保存辅助配置失败: %s", e)
             return _err(str(e), 500)
+
+
+# ─── 图片/视频生成配置 API ───────────────────────────────────────────────
+
+@app.route("/api/generation/config", methods=["GET", "POST"])
+def api_generation_config():
+    """读写图片/视频生成配置"""
+    from services.generation_config import read_config, write_config
+
+    if request.method == "GET":
+        cfg = read_config()
+        # 附加运行时状态
+        from agent.image_gen_registry import list_providers as list_img, get_active_provider as act_img
+        from agent.video_gen_registry import list_providers as list_vid, get_active_provider as act_vid
+
+        img_providers = [
+            {"name": p.name, "display": p.display_name, "available": p.is_available(),
+             "models": p.list_models()}
+            for p in list_img()
+        ]
+        vid_providers = [
+            {"name": p.name, "display": p.display_name, "available": p.is_available(),
+             "models": p.list_models()}
+            for p in list_vid()
+        ]
+        active_img = act_img()
+        active_vid = act_vid()
+
+        return jsonify({
+            **cfg,
+            "runtime": {
+                "image_providers": img_providers,
+                "video_providers": vid_providers,
+                "active_image": active_img.name if active_img else None,
+                "active_video": active_vid.name if active_vid else None,
+            },
+        })
+    else:
+        data = request.json or {}
+        cfg = write_config(data)
+        return jsonify(cfg)
+
+
+@app.route("/api/generation/reload", methods=["POST"])
+def api_generation_reload():
+    """热重载生成后端 (URL 变更后调用)"""
+    try:
+        from plugins import reload_all
+        img_count, vid_count = reload_all()
+        return jsonify({
+            "status": "reloaded",
+            "image_providers": img_count,
+            "video_providers": vid_count,
+        })
+    except Exception as e:
+        log.error("重载生成后端失败: %s", e)
+        return _err(str(e), 500)
+
+
+@app.route("/api/generation/workflows", methods=["GET", "POST", "DELETE"])
+def api_generation_workflows():
+    """管理自定义工作流
+    GET  - 列出所有
+    POST - 注册/更新 (body: {name, type, display_name, workflow: {...}})
+    DELETE - 删除 (?name=xxx)
+    """
+    from services.generation_config import (
+        list_registered_workflows, register_workflow, remove_workflow,
+    )
+
+    if request.method == "GET":
+        return jsonify({"workflows": list_registered_workflows()})
+    elif request.method == "POST":
+        data = request.json or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return _err("workflow name is required", 400)
+        wf = register_workflow(name, data)
+        return jsonify(wf)
+    else:
+        name = request.args.get("name", "").strip()
+        if not name:
+            return _err("name query param required", 400)
+        ok = remove_workflow(name)
+        return jsonify({"deleted": ok})
 
 
 @app.route("/api/switch_backend", methods=["POST"])
@@ -537,6 +626,8 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
 
                     max_rounds = 30  # 支持大文件分块读取（如 10000 行 / 500 行每次 = 20 轮）
                     # 思考链标记检测已移至前端（实时渲染 + 免缓冲延迟）
+                    # 图片/视频生成工具是 terminal 工具：执行后不回调 LLM，结果直接推前端
+                    GENERATION_TOOLS = {"image_generate", "video_generate"}
 
                     for round_num in range(max_rounds):
                         # ── 调模型，收集完整输出 ──
@@ -650,11 +741,20 @@ if True:  # llama-cpp routes (always registered, runtime check per-handler)
 
                             yield f"data: {json.dumps({'type': 'tool_result', 'name': tc['name'], 'result': result_str, 'id': tc_id}, ensure_ascii=False)}\n\n"
 
-                            _messages.append({
-                                "role": "tool",
-                                "tool_call_id": tc_id,
-                                "content": result_str,
-                            })
+                            if tc["name"] not in GENERATION_TOOLS:
+                                # 非生成工具：结果回传给 LLM 供后续推理
+                                import re as _re
+                                llm_visible = _re.sub(r'!\[[^\]]*\]\([^)]+\)\n?', '', result_str).strip()
+                                _messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tc_id,
+                                    "content": llm_visible,
+                                })
+                            # 生成工具：结果已通过 SSE 推给前端，不喂 LLM
+
+                        # ── 生成工具是 terminal 工具，执行完就结束，不回调 LLM ──
+                        if any(tc["name"] in GENERATION_TOOLS for tc in tool_calls):
+                            break
 
                     # ── 结束事件 ──
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"

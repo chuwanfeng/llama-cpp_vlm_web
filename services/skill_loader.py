@@ -249,11 +249,16 @@ def _discover_skill_files(skills_dir: str = SKILLS_DIR) -> List[Path]:
 
 # ── 技能加载 ────────────────────────────────────────────────────────────
 
-def load_skill(filepath: str) -> Optional[Skill]:
+# 全局预处理配置缓存
+_preprocess_cfg: Optional[Dict[str, Any]] = None
+
+
+def load_skill(filepath: str, preprocess: bool = True) -> Optional[Skill]:
     """加载单个技能文件（SKILL.md）。
 
     Args:
         filepath: SKILL.md 的路径。
+        preprocess: 是否应用模板变量/内联 Shell 预处理 (默认 True)。
 
     Returns:
         Skill 对象，加载失败返回 None。
@@ -272,6 +277,21 @@ def load_skill(filepath: str) -> Optional[Skill]:
     except Exception as e:
         logger.warning("无法读取技能文件 %s: %s", filepath, e)
         return None
+
+    # ── 预处理 ──
+    if preprocess:
+        global _preprocess_cfg
+        if _preprocess_cfg is None:
+            try:
+                from services.skill_preprocessing import load_skills_config
+                _preprocess_cfg = load_skills_config()
+            except Exception:
+                _preprocess_cfg = {}
+        try:
+            from services.skill_preprocessing import preprocess_skill_content
+            raw = preprocess_skill_content(raw, path.parent, skills_cfg=_preprocess_cfg)
+        except Exception:
+            logger.debug("技能预处理跳过 (预处理模块不可用)", exc_info=True)
 
     frontmatter, body = _parse_skill_frontmatter(raw)
     if not frontmatter:

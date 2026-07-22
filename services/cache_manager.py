@@ -22,7 +22,7 @@ import os
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 
 class LRUCache:
@@ -211,6 +211,36 @@ class CacheManager:
             wrapper.cache_clear = lambda: self.delete(cache_key)
             return wrapper
         return decorator
+
+    # ── 工具结果缓存 (lookaside cache) ──
+
+    # 只对幂等操作启用缓存
+    _CACHEABLE_TOOLS = frozenset({
+        "read_file", "list_directory", "glob", "grep",
+        "web_search", "web_fetch",
+    })
+
+    @staticmethod
+    def _tool_cache_key(tool_name: str, args: Dict[str, Any]) -> str:
+        """基于工具名+参数哈希生成缓存 key"""
+        import hashlib
+        payload = json.dumps({"n": tool_name, "a": args}, sort_keys=True, ensure_ascii=False)
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+        return f"tc:{tool_name}:{digest}"
+
+    def get_tool_result(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+        """获取缓存的工具执行结果"""
+        if tool_name not in self._CACHEABLE_TOOLS:
+            return None
+        key = self._tool_cache_key(tool_name, args)
+        return self.memory.get(key)  # 内存 LRU 缓存, 5分钟 TTL
+
+    def set_tool_result(self, tool_name: str, args: Dict[str, Any], result: str) -> None:
+        """缓存工具执行结果"""
+        if tool_name not in self._CACHEABLE_TOOLS:
+            return
+        key = self._tool_cache_key(tool_name, args)
+        self.memory.set(key, result)
 
 
 # 全局缓存实例（单例）

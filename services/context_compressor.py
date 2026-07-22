@@ -337,6 +337,10 @@ class ContextCompressor(ContextEngine):
         # 迭代摘要状态
         self._previous_summary: Optional[str] = None
 
+        # Preflight 延迟跟踪
+        self._last_rough_tokens_when_real_prompt_fit: int = 0
+        self._last_compression_rough_tokens: int = 0
+
         if not quiet_mode:
             logger.info(
                 "Context compressor initialized: context_length=%d threshold=%d (%.0f%%) "
@@ -717,6 +721,19 @@ breaking things. Red flags, footguns, uncommitted changes, fragile states.]"""
                 n_messages, original_tokens, self.threshold_tokens,
             )
 
+        # Step 0: Preflight 延迟检查 — 避免 rough estimate 噪声导致的假压缩
+        self._last_compression_rough_tokens = original_tokens
+        if self.should_defer_preflight_to_real_usage(original_tokens):
+            if not self.quiet_mode:
+                logger.info(
+                    "Compression deferred — rough estimate %d likely noisy (last fit at %d)",
+                    original_tokens, self._last_rough_tokens_when_real_prompt_fit,
+                )
+            return messages
+
+        # Step 0.5: 剥离历史消息中的图片 data URL (避免 base64 污染摘要)
+        messages = self._strip_images_from_messages(messages)
+
         # Step 1: 剪枝 tool results
         messages, pruned_count = self._prune_old_tool_results(
             messages, self.protect_last_n, protect_tail_tokens=self.tail_token_budget
@@ -827,3 +844,94 @@ breaking things. Red flags, footguns, uncommitted changes, fragile states.]"""
             logger.info("Compression #%d complete", self.compression_count)
 
         return compressed
+
+    # ── Preflight 延迟机制 ──────────────────────────────────────
+
+    def update_from_response(self, usage: Dict[str, Any]) -> None:
+        """从 API 响应更新 token 使用量 + 校准 rough estimator"""
+        super().update_from_response(usage)
+        if self._last_compression_rough_tokens > 0 and self.last_prompt_tokens > 0:
+            # 压缩后首次成功调用 — 记录 rough tokens 对应了多少真实 tokens
+            self._last_rough_tokens_when_real_prompt_fit = self._last_compression_rough_tokens
+            self._last_compression_rough_tokens = 0
+
+    def should_defer_preflight_to_real_usage(self, rough_tokens: int) -> bool:
+        """当 rough estimate 已知高噪声时延迟压缩。
+
+        压缩器的 rough token estimate 通常偏大（schema overhead），
+        如果之前一次压缩后的 rough estimate 跟这次的很接近，
+        而上次压缩后真实 usage 是安全的，就延迟这次压缩。
+        """
+        if rough_tokens < self.threshold_tokens:
+            return False
+        baseline = self._last_rough_tokens_when_real_prompt_fit or self._last_compression_rough_tokens
+        growth = max(0, rough_tokens - baseline)
+        # 增长 < 2000 tokens → 可能是 schema overhead 抖动,延迟压缩
+        return growth < 2000
+
+    # ── 迭代摘要更新 ────────────────────────────────────────────
+
+    def _build_iterative_summary_prompt(self, turns: str) -> str:
+        """当存在先前摘要时,构建迭代更新提示词而非重新摘要"""
+        if not self._previous_summary:
+            return (
+                f"Summarize the following conversation turns in a compact, information-dense format. "
+                f"Preserve key decisions, code changes, file paths, errors encountered, and action items.\n\n"
+                f"{turns}"
+            )
+        return (
+            f"Below is a previous summary of the earlier conversation, followed by new turns. "
+            f"Produce an UPDATED, unified summary that integrates both. "
+            f"Preserve key decisions, code changes, file paths, errors encountered, and action items.\n\n"
+            f"PREVIOUS SUMMARY:\n{self._previous_summary}\n\n"
+            f"NEW TURNS:\n{turns}"
+        )
+
+    # ── 图像剥离 ────────────────────────────────────────────────
+
+    @staticmethod
+    def _is_image_content_part(part: Any) -> bool:
+        """判断 content part 是否为图片"""
+        if not isinstance(part, dict):
+            return False
+        if part.get("type") == "image_url":
+            return True
+        if part.get("type") == "image":
+            return True
+        return False
+
+    @staticmethod
+    def _strip_images_from_content(content: Any) -> Any:
+        """从消息内容中剥离图片数据,保留文本部分"""
+        if content is None:
+            return None
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            stripped = []
+            img_count = 0
+            for part in content:
+                if ContextCompressor._is_image_content_part(part):
+                    img_count += 1
+                else:
+                    stripped.append(part)
+            if img_count > 0 and not stripped:
+                # 全是图片,保留占位提示
+                stripped.append({"type": "text", "text": f"[{img_count} image(s) — content stripped for compression]"})
+            return stripped
+        return content
+
+    def _strip_images_from_messages(
+        self, messages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """剥离所有消息中非 head 部分的图片数据"""
+        if not messages:
+            return messages
+        result = []
+        head_count = min(self.protect_first_n, len(messages))
+        for i, msg in enumerate(messages):
+            msg_copy = msg.copy()
+            if i >= head_count:
+                msg_copy["content"] = self._strip_images_from_content(msg.get("content"))
+            result.append(msg_copy)
+        return result
