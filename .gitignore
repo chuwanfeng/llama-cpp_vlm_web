@@ -6,3 +6,32 @@ settings.json
 models/
 *.gguf
 *.bin
+
+# 日志
+logs/
+*.log
+
+# 数据库 (SQLite)
+*.db
+*.db-shm
+*.db-wal
+
+# 用户运行时数据
+data/cron_jobs.json
+memory.md
+memory/
+conversations/
+
+# 缓存
+.cache/
+__MACOSX/
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
