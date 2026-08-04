@@ -308,7 +308,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 /* ── Auxiliary Model Panel ─────────────────────────────────────── */
 .s-hint{font-size:12px;color:var(--muted);font-weight:400;margin-left:6px}
-#aux-provider,#s-family-local{padding:6px 10px;border-radius:6px;background:var(--input);color:var(--text);font-size:13px;border:1px solid var(--border);border:1px solid var(--border);min-width:160px}
+#aux-provider,#s-family-local,#s-ctx-local{padding:6px 10px;border-radius:6px;background:var(--input);color:var(--text);font-size:13px;border:1px solid var(--border);min-width:160px}
 
 .toggle-lbl{position:relative;display:inline-block;width:44px;height:24px;cursor:pointer}
 .toggle-lbl input{opacity:0;width:0;height:0}

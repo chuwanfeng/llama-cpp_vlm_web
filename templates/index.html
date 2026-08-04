@@ -384,7 +384,7 @@
           <option value="qwen35">Qwen3.5 / Qwen3.6</option>
           </select></div>
           
-          <div class="s-row"><label>上下文窗口</label><select id="s-ctx-local" onchange="us('ctx','local')" style="width:140px">
+          <div class="s-row"><label>上下文窗口</label><select id="s-ctx-local" onchange="ctxChanged=true;us('ctx','local')">
             <option value="4096">4096</option>
             <option value="8192">8192</option>
             <option value="16384">16384</option>
