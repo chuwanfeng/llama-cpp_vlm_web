@@ -776,17 +776,8 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
               msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
             }
           } else if (data.content) {
-            // ── 两路分流：MiniCPM 直出 vs 其余模型切标签 ──
-            if (_isMiniCPM) {
-              // MiniCPM：后端 R1 缓冲已分离 thinking/content，content 是干净正文
-              _thinkEnded = true;
-              turnText += data.content;
-              _tokenCount++;
-              updateMsgTps(msgEl, _tokenCount, _tpsStart);
-              const displayText = turnText.replace(/<tool_call\s+name="[^"]*">[\s\S]*<\/tool_call>/gi, '⚙️ ...');
-              bubble.innerHTML = bubbleBase + renderMarkdown(displayText);
-              msgEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
-            } else if (_thinkEnded) {
+            // MiniCPM5 走标准 think-buffer (缓冲+折叠 <think> 标签)
+            if (_thinkEnded) {
               // 标记已出现 → 正文流式渲染
               turnText += data.content;
               _tokenCount++;
