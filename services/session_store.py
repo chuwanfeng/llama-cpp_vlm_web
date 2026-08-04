@@ -147,8 +147,8 @@ class SessionStore:
 
     def __init__(self, db_path: str = None):
         if db_path is None:
-            # 默认在项目目录下
-            db_path = os.path.join(os.path.dirname(__file__), "..", "conversations.db")
+            # 默认在 data/ 目录下
+            db_path = os.path.join(os.path.dirname(__file__), "..", "data", "sessions.db")
             db_path = os.path.abspath(db_path)
 
         self.db_path = Path(db_path)
