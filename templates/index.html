@@ -377,9 +377,19 @@
         <!-- 本地推理参数 -->
         <div class="set-sec" id="set-local-infer">
           <h2>🖥️ 本地推理参数 <span class="s-badge s-badge-local">本地</span></h2>
-          <div class="s-row"><label>Temperature</label><input type="range" id="s-temp-local" min="0" max="2" step=".1" value=".7" oninput="us('temp','local')"><span class="s-val" id="v-temp-local">0.7</span></div>
+          <div class="s-row"><label>Temperature</label><input type="range" id="s-temp-local" min="0" max="2" step=".01" value="0.8" oninput="us('temp','local')"><span class="s-val" id="v-temp-local">0.8</span></div>
           <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max-local" min="256" max="8192" step="256" value="4096" oninput="us('max','local')"><span class="s-val" id="v-max-local">4096</span></div>
-          <div class="s-row"><label>Top P</label><input type="range" id="s-topp-local" min="0" max="1" step=".05" value=".9" oninput="us('topp','local')"><span class="s-val" id="v-topp-local">0.9</span></div>
+          <div class="s-row"><label>Top P</label><input type="range" id="s-topp-local" min="0" max="1" step=".01" value="0.9" oninput="us('topp','local')"><span class="s-val" id="v-topp-local">0.9</span></div>
+          <div class="s-row"><label>Top K</label><input type="range" id="s-topk-local" min="0" max="200" step="1" value="30" oninput="us('topk','local')"><span class="s-val" id="v-topk-local">30</span></div>
+          <div class="s-row"><label>Min P</label><input type="range" id="s-minp-local" min="0" max="1" step=".01" value="0.05" oninput="us('minp','local')"><span class="s-val" id="v-minp-local">0.05</span></div>
+          <div class="s-row"><label>Typical P</label><input type="range" id="s-typicalp-local" min="0" max="1" step=".01" value="1" oninput="us('typicalp','local')"><span class="s-val" id="v-typicalp-local">1.0</span></div>
+          <div class="s-row"><label>Repeat Penalty</label><input type="range" id="s-repp-local" min="0" max="2" step=".01" value="1" oninput="us('repp','local')"><span class="s-val" id="v-repp-local">1.0</span></div>
+          <div class="s-row"><label>Freq Penalty</label><input type="range" id="s-freqp-local" min="0" max="2" step=".01" value="0" oninput="us('freqp','local')"><span class="s-val" id="v-freqp-local">0.0</span></div>
+          <div class="s-row"><label>Presence Penalty</label><input type="range" id="s-presp-local" min="0" max="2" step=".01" value="1" oninput="us('presp','local')"><span class="s-val" id="v-presp-local">1.0</span></div>
+          <div class="s-row"><label>Mirostat Mode</label><input type="range" id="s-miro-local" min="0" max="2" step="1" value="0" oninput="us('miro','local')"><span class="s-val" id="v-miro-local">0</span></div>
+          <div class="s-row"><label>Mirostat Eta</label><input type="range" id="s-miroe-local" min="0" max="1" step=".01" value="0.1" oninput="us('miroe','local')"><span class="s-val" id="v-miroe-local">0.1</span></div>
+          <div class="s-row"><label>Mirostat Tau</label><input type="range" id="s-mirot-local" min="0" max="10" step=".1" value="5" oninput="us('mirot','local')"><span class="s-val" id="v-mirot-local">5.0</span></div>
+          <hr class="s-div">
           <div class="s-row"><label>工具调用</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="tools-local-enable" onchange="onToolsChange()"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>计划模式</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="plan-mode-local"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>思考输出</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="think-output-local"><span class="toggle-slider"></span></label></div>
@@ -391,9 +401,9 @@
         <!-- 厂商推理参数 -->
         <div class="set-sec" id="set-vendor-infer" style="display:none">
           <h2>☁️ 厂商推理参数 <span class="s-badge s-badge-vendor">厂商</span></h2>
-          <div class="s-row"><label>Temperature</label><input type="range" id="s-temp-vendor" min="0" max="2" step=".1" value=".7" oninput="us('temp','vendor')"><span class="s-val" id="v-temp-vendor">0.7</span></div>
+          <div class="s-row"><label>Temperature</label><input type="range" id="s-temp-vendor" min="0" max="2" step=".01" value="0.8" oninput="us('temp','vendor')"><span class="s-val" id="v-temp-vendor">0.8</span></div>
           <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max-vendor" min="256" max="16384" step="256" value="4096" oninput="us('max','vendor')"><span class="s-val" id="v-max-vendor">4096</span></div>
-          <div class="s-row"><label>Top P</label><input type="range" id="s-topp-vendor" min="0" max="1" step=".05" value=".9" oninput="us('topp','vendor')"><span class="s-val" id="v-topp-vendor">0.9</span></div>
+          <div class="s-row"><label>Top P</label><input type="range" id="s-topp-vendor" min="0" max="1" step=".01" value="0.9" oninput="us('topp','vendor')"><span class="s-val" id="v-topp-vendor">0.9</span></div>
           <div class="s-row"><label>工具调用</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="tools-vendor-enable" onchange="onToolsChange()"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>计划模式</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="plan-mode-vendor"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>思考输出</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="think-output-vendor"><span class="toggle-slider"></span></label></div>

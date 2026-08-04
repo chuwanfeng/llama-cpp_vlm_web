@@ -38,14 +38,21 @@ FAMILY_ROPE_BASE = {
     "qwen3": 1000000.0,  # Qwen3 默认 1M
     "qwen25": 1000000.0,  # Qwen2.5 默认 1M
     "llama4": 500000.0,  # LLaMA 4
-    "minicpm": 1000000.0,  # MiniCPM R1-thinking 默认 1M
+    "minicpm": 10000.0,  # MiniCPM 1B 小模型，默认 10K（1M 会破坏推理）
 }
 
 # ─── 推理参数默认值 ──────────────────────────────────────────────────────────
-DEFAULT_TEMPERATURE = 0.7
+DEFAULT_TEMPERATURE = 0.8
 DEFAULT_TOP_P = 0.9
-DEFAULT_TOP_K = 40
+DEFAULT_TOP_K = 30
+DEFAULT_MIN_P = 0.05
+DEFAULT_TYPICAL_P = 1.0
+DEFAULT_PRESENCE_PENALTY = 1.0
+DEFAULT_FREQUENCY_PENALTY = 0.0
 DEFAULT_REPEAT_PENALTY = 1.0
+DEFAULT_MIROSTAT_MODE = 0
+DEFAULT_MIROSTAT_ETA = 0.1
+DEFAULT_MIROSTAT_TAU = 5.0
 
 # ─── 厂商 API ───────────────────────────────────────────────────────────────
 # 各厂商 API key 通过环境变量配置（参照 api_backends.py 中的 VENDORS 定义）:

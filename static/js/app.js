@@ -22,7 +22,7 @@ var toolsEnabled = false;  // 工具调用开关（var 使 window.toolsEnabled �
 var thinkOutputEnabled = true;    // 思考链输出开关
 var autoReviewEnabled = false;   // 自动审查开关
 var ctxExtEnabled = true;        // 上下文扩展开关
-var minPromptEnabled = true;     // 最小提示开关
+var minPromptEnabled = false;    // 最小提示开关（默认关闭：不截断模板等精心设计的 system prompt）
 let toolSchemas = [];      // 从服务端加载的工具定义
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -31,10 +31,20 @@ let toolSchemas = [];      // 从服务端加载的工具定义
 // ── 设置字段注册表: 新增持久化设置只需在此添加 ──────────────────────────
 // { el: DOM id, var?: 全局变量名, type?: 'input'(默认)|'checkbox' }
 // 18 个参数 = 本地 9 项 (3 滑块 + 6 开关) + 厂商 9 项
+// 18 个参数 = 本地 21 项 (12 滑块 + 6 开关 + 3 辅助) + 厂商 21 项
 const _SF_LOCAL = {
   's-temp-local':          { el: 's-temp-local' },
   's-max-local':           { el: 's-max-local' },
   's-topp-local':          { el: 's-topp-local' },
+  's-topk-local':          { el: 's-topk-local' },
+  's-minp-local':          { el: 's-minp-local' },
+  's-typicalp-local':      { el: 's-typicalp-local' },
+  's-repp-local':          { el: 's-repp-local' },
+  's-freqp-local':         { el: 's-freqp-local' },
+  's-presp-local':         { el: 's-presp-local' },
+  's-miro-local':          { el: 's-miro-local' },
+  's-miroe-local':         { el: 's-miroe-local' },
+  's-mirot-local':         { el: 's-mirot-local' },
   'tools_local':           { el: 'tools-local-enable',     var: 'toolsEnabled',     type: 'checkbox' },
   'plan_mode_local':       { el: 'plan-mode-local',        var: 'planModeEnabled',  type: 'checkbox' },
   'think_output_local':    { el: 'think-output-local',     var: 'thinkOutputEnabled',type: 'checkbox' },
@@ -105,6 +115,9 @@ async function loadSettings() {
     }
     // 更新 slider 值标签
     us('temp','local'); us('max','local'); us('topp','local');
+    us('topk','local'); us('minp','local'); us('typicalp','local');
+    us('repp','local'); us('freqp','local'); us('presp','local');
+    us('miro','local'); us('miroe','local'); us('mirot','local');
     us('temp','vendor'); us('max','vendor'); us('topp','vendor');
     if (s.vendor_creds) {
       vendorCreds = { ...s.vendor_creds };
@@ -703,8 +716,15 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
       max_tokens: parseInt(document.getElementById('s-max-local').value),
       temperature: parseFloat(document.getElementById('s-temp-local').value),
       top_p: parseFloat(document.getElementById('s-topp-local').value),
-      top_k: 40,
-      repeat_penalty: 1.0,
+      top_k: parseInt(document.getElementById('s-topk-local').value),
+      min_p: parseFloat(document.getElementById('s-minp-local').value),
+      typical_p: parseFloat(document.getElementById('s-typicalp-local').value),
+      repeat_penalty: parseFloat(document.getElementById('s-repp-local').value),
+      frequency_penalty: parseFloat(document.getElementById('s-freqp-local').value),
+      presence_penalty: parseFloat(document.getElementById('s-presp-local').value),
+      mirostat_mode: parseInt(document.getElementById('s-miro-local').value),
+      mirostat_eta: parseFloat(document.getElementById('s-miroe-local').value),
+      mirostat_tau: parseFloat(document.getElementById('s-mirot-local').value),
       images: images.map(img => img.base64),
       stream: true
     };
@@ -2129,10 +2149,18 @@ async function doTrVendor(prompt, outEl) {
 
 // 设置
 function us(k, sfx) {
-  const s = sfx || '';
-  const ids = { temp: 's-temp' + (s ? '-' + s : ''), max: 's-max' + (s ? '-' + s : ''), topp: 's-topp' + (s ? '-' + s : '') };
-  const vals = { temp: 'v-temp' + (s ? '-' + s : ''), max: 'v-max' + (s ? '-' + s : ''), topp: 'v-topp' + (s ? '-' + s : '') };
-  document.getElementById(vals[k]).textContent = document.getElementById(ids[k]).value;
+  const s = sfx ? '-' + sfx : '';
+  const map = {
+    temp: 's-temp' + s, max: 's-max' + s, topp: 's-topp' + s,
+    topk: 's-topk' + s, minp: 's-minp' + s, typicalp: 's-typicalp' + s,
+    repp: 's-repp' + s, freqp: 's-freqp' + s, presp: 's-presp' + s,
+    miro: 's-miro' + s, miroe: 's-miroe' + s, mirot: 's-mirot' + s
+  };
+  const el = document.getElementById(map[k]);
+  if (!el) return;
+  const vid = map[k].replace('s-', 'v-');
+  const vEl = document.getElementById(vid);
+  if (vEl) vEl.textContent = el.value;
 }
 
 function syncVendorToSettings(vdef) {
@@ -2519,8 +2547,11 @@ function collectMessages() {
   for (const el of nodes) {
     const bubble = el.querySelector('.msg-bubble');
     if (!bubble) continue;
+    const text = (bubble.innerText || '').trim();
+    // 跳过占位符 '...' 和空内容（尚未完成流式输出）
+    if (!text || text === '...') continue;
     const role = el.classList.contains('usr') ? 'user' : 'assistant';
-    msgs.push({ role, content: bubble.innerText || '' });
+    msgs.push({ role, content: text });
   }
   return msgs;
 }
