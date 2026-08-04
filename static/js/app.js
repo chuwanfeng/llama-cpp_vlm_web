@@ -418,6 +418,11 @@ function onFamilyChange() {
     const vEl = document.getElementById(elId.replace('s-', 'v-'));
     if (vEl) vEl.textContent = el.value;
   }
+  // 同步上下文窗口
+  if (window.__ctxPresets && window.__ctxPresets[fam] != null) {
+    const ctxEl = document.getElementById('s-ctx-local');
+    if (ctxEl) ctxEl.value = window.__ctxPresets[fam];
+  }
 }
 
 function saveFamilyPreset() {
