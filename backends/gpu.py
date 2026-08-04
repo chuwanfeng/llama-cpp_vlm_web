@@ -685,18 +685,6 @@ def load_model(model_path, n_ctx=None, n_gpu_layers=None, chat_handler=None, for
     # 上下文超过 8K 时自动启用 RoPE 扩展
 
 
-    if model_family == "minicpm" and n_ctx > 8192:
-
-
-        print(f"[llama] MiniCPM5: n_ctx {n_ctx} -> 8192 (小模型不扩展)")
-
-
-        n_ctx = 8192
-
-
-        rope_scaling = "none"
-
-
     if n_ctx > 8192 and rope_scaling != "none":
 
 
