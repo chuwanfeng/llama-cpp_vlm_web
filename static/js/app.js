@@ -21,7 +21,7 @@ let auxProviders = [];  // available providers for aux dropdown
 var toolsEnabled = false;  // 工具调用开关（var 使 window.toolsEnabled 生效，_SF 注册表通过 window[d.var] 访问）
 var thinkOutputEnabled = true;    // 思考链输出开关
 var autoReviewEnabled = false;   // 自动审查开关
-var ctxExtEnabled = true;        // 上下文扩展开关
+
 var minPromptEnabled = false;    // 最小提示开关（默认关闭：不截断模板等精心设计的 system prompt）
 let toolSchemas = [];      // 从服务端加载的工具定义
 
@@ -33,24 +33,11 @@ let toolSchemas = [];      // 从服务端加载的工具定义
 // 18 个参数 = 本地 9 项 (3 滑块 + 6 开关) + 厂商 9 项
 // 18 个参数 = 本地 21 项 (12 滑块 + 6 开关 + 3 辅助) + 厂商 21 项
 const _SF_LOCAL = {
-  's-temp-local':          { el: 's-temp-local' },
-  's-max-local':           { el: 's-max-local' },
-  's-topp-local':          { el: 's-topp-local' },
-  's-topk-local':          { el: 's-topk-local' },
-  's-minp-local':          { el: 's-minp-local' },
-  's-typicalp-local':      { el: 's-typicalp-local' },
-  's-repp-local':          { el: 's-repp-local' },
-  's-freqp-local':         { el: 's-freqp-local' },
-  's-presp-local':         { el: 's-presp-local' },
-  's-miro-local':          { el: 's-miro-local' },
-  's-miroe-local':         { el: 's-miroe-local' },
-  's-mirot-local':         { el: 's-mirot-local' },
   'tools_local':           { el: 'tools-local-enable',     var: 'toolsEnabled',     type: 'checkbox' },
   'plan_mode_local':       { el: 'plan-mode-local',        var: 'planModeEnabled',  type: 'checkbox' },
   'think_output_local':    { el: 'think-output-local',     var: 'thinkOutputEnabled',type: 'checkbox' },
   'auto_review_local':     { el: 'auto-review-local',      var: 'autoReviewEnabled',type: 'checkbox' },
   'min_prompt_local':      { el: 'min-prompt-local',       var: 'minPromptEnabled', type: 'checkbox' },
-  'ctx_ext_local':         { el: 'ctx-ext-local',          var: 'ctxExtEnabled',    type: 'checkbox' },
 };
 const _SF_VENDOR = {
   's-temp-vendor':        { el: 's-temp-vendor' },
@@ -61,7 +48,6 @@ const _SF_VENDOR = {
   'think_output_vendor':  { el: 'think-output-vendor',     var: 'thinkOutputEnabled',  type: 'checkbox' },
   'auto_review_vendor':   { el: 'auto-review-vendor',      var: 'autoReviewEnabled',   type: 'checkbox' },
   'min_prompt_vendor':    { el: 'min-prompt-vendor',       var: 'minPromptEnabled',    type: 'checkbox' },
-  'ctx_ext_vendor':       { el: 'ctx-ext-vendor',          var: 'ctxExtEnabled',        type: 'checkbox' },
 };
 
 async function saveSettings() {
@@ -78,6 +64,21 @@ async function saveSettings() {
     if (d.type === 'checkbox') settings[k] = document.getElementById(d.el)?.checked || false;
     else settings[k] = document.getElementById(d.el)?.value || '';
   }
+  // 保存当前家族的上下文窗口
+  const curFam = document.getElementById('s-family-local')?.value || 'default';
+  const curCtx = parseInt(document.getElementById('s-ctx-local')?.value) || 32768;
+  if (!window.__ctxPresets) window.__ctxPresets = {};
+  window.__ctxPresets[curFam] = curCtx;
+  settings.ctx_local = window.__ctxPresets;
+  // 同时持久化 per-family 采样预设（收集，不单独发送）
+  if (!_samplingPresets) _samplingPresets = {};
+  _samplingPresets[curFam] = {};
+  for (const [elId, [key, defVal]] of Object.entries(FAMILY_SLIDER_MAP)) {
+    const el = document.getElementById(elId);
+    _samplingPresets[curFam][key] = el ? parseFloat(el.value) : defVal;
+  }
+  settings.sampling_local = _samplingPresets;
+
   try {
     const res = await fetch('/api/settings', {
       method: 'POST',
@@ -113,11 +114,6 @@ async function loadSettings() {
         el.value = s[k];
       }
     }
-    // 更新 slider 值标签
-    us('temp','local'); us('max','local'); us('topp','local');
-    us('topk','local'); us('minp','local'); us('typicalp','local');
-    us('repp','local'); us('freqp','local'); us('presp','local');
-    us('miro','local'); us('miroe','local'); us('mirot','local');
     us('temp','vendor'); us('max','vendor'); us('topp','vendor');
     if (s.vendor_creds) {
       vendorCreds = { ...s.vendor_creds };
@@ -126,6 +122,24 @@ async function loadSettings() {
         if (document.getElementById('set-api-key')) document.getElementById('set-api-key').value = vc.api_key || '';
         if (document.getElementById('set-base-url')) document.getElementById('set-base-url').value = vc.base_url || '';
       }
+    }
+    // 从 per-family 预设恢复采样参数 + 上下文（真相源: sampling_local / ctx_local）
+    if (s.sampling_local) _samplingPresets = s.sampling_local;
+    if (s.ctx_local) window.__ctxPresets = s.ctx_local;
+    const curFam2 = document.getElementById('s-family-local')?.value || 'default';
+    if (_samplingPresets) {
+      const defaults = _samplingPresets[curFam2] || _samplingPresets['default'] || {};
+      for (const [elId, [key, defVal]] of Object.entries(FAMILY_SLIDER_MAP)) {
+        const el = document.getElementById(elId);
+        if (!el) continue;
+        el.value = defaults[key] != null ? defaults[key] : defVal;
+        const vEl = document.getElementById(elId.replace('s-', 'v-'));
+        if (vEl) vEl.textContent = el.value;
+      }
+    }
+    if (window.__ctxPresets && window.__ctxPresets[curFam2] != null) {
+      const ctxEl = document.getElementById('s-ctx-local');
+      if (ctxEl) ctxEl.value = window.__ctxPresets[curFam2];
     }
   } catch (e) {}
   syncSettingsPanels();
@@ -271,6 +285,7 @@ function stopGen() {
 // ──────────────────────────────────────────────────────────────────────────────
 async function init() {
   await loadSettings();
+  loadSamplingPresets();  // 异步加载 per-family 采样预设
   await detectBackend();
   await initSession();    // 会话持久化：加载/创建会话
   await loadT();
@@ -286,7 +301,6 @@ async function init() {
     toolsEnabled = document.getElementById('tools-' + _p + '-enable')?.checked ?? false;
     thinkOutputEnabled = document.getElementById('think-output-' + _p)?.checked ?? true;
     autoReviewEnabled = document.getElementById('auto-review-' + _p)?.checked ?? false;
-    ctxExtEnabled = document.getElementById('ctx-ext-' + _p)?.checked ?? true;
     minPromptEnabled = document.getElementById('min-prompt-' + _p)?.checked ?? true;
   }
   updateBackendStatus();
@@ -361,6 +375,88 @@ function syncSettingsPanels() {
   vendorInfer.style.display = isVendor ? 'block' : 'none';
   if (vendorSec) {
     vendorSec.style.display = isVendor ? 'block' : 'none';
+  }
+}
+
+// ── 按模型家族切换采样预设 ──
+const FAMILY_SLIDER_MAP = {
+  's-temp-local':  ['temperature',       0.8],
+  's-max-local':   ['max_tokens',        4096],
+  's-topp-local':  ['top_p',             0.9],
+  's-topk-local':  ['top_k',             30],
+  's-minp-local':  ['min_p',             0.05],
+  's-typicalp-local': ['typical_p',      1.0],
+  's-repp-local':  ['repeat_penalty',    1.0],
+  's-freqp-local': ['frequency_penalty', 0.0],
+  's-presp-local': ['presence_penalty',  1.0],
+  's-miro-local':  ['mirostat_mode',     0],
+  's-miroe-local': ['mirostat_eta',      0.1],
+  's-mirot-local': ['mirostat_tau',      5.0],
+};
+
+let _samplingPresets = null;  // 从 settings.json 异步加载
+
+async function loadSamplingPresets() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    // sampling_local / ctx_local 已在 loadSettings() 中推 DOM，这里仅补内存
+    if (s.sampling_local && !_samplingPresets) _samplingPresets = s.sampling_local;
+    if (s.ctx_local && !window.__ctxPresets) window.__ctxPresets = s.ctx_local;
+  } catch (e) { /* ignore */ }
+}
+
+function onFamilyChange() {
+  if (!_samplingPresets) return;
+  const fam = document.getElementById('s-family-local')?.value || 'default';
+  const p = _samplingPresets[fam] || _samplingPresets['default'] || {};
+  for (const [elId, [key, defVal]] of Object.entries(FAMILY_SLIDER_MAP)) {
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    el.value = p[key] != null ? p[key] : defVal;
+    // 同步右边的数值显示
+    const vEl = document.getElementById(elId.replace('s-', 'v-'));
+    if (vEl) vEl.textContent = el.value;
+  }
+}
+
+function saveFamilyPreset() {
+  const fam = document.getElementById('s-family-local')?.value || 'default';
+  if (!_samplingPresets) _samplingPresets = {};
+  _samplingPresets[fam] = {};
+  for (const [elId, [key, defVal]] of Object.entries(FAMILY_SLIDER_MAP)) {
+    const el = document.getElementById(elId);
+    _samplingPresets[fam][key] = el ? parseFloat(el.value) : defVal;
+  }
+  // 异步保存到服务端
+  persistSamplingPresets();
+}
+
+async function persistSamplingPresets() {
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    s.sampling_local = _samplingPresets;
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(s)
+    });
+  } catch (e) { /* ignore */ }
+}
+
+// 模型切换时自动匹配家族预设
+function syncFamilyByModel(modelName) {
+  if (!modelName) return;
+  const m = modelName.toLowerCase();
+  let fam = 'default';
+  if (m.includes('minicpm')) fam = 'minicpm';
+  else if (m.includes('gemma-4') || m.includes('gemma4')) fam = 'gemma4';
+  else if (m.includes('qwen3.5') || m.includes('qwen35') || m.includes('qwen3.6') || m.includes('qwen36')) fam = 'qwen35';
+  const sel = document.getElementById('s-family-local');
+  if (sel && sel.value !== fam) {
+    sel.value = fam;
+    onFamilyChange();
   }
 }
 
@@ -489,6 +585,7 @@ function selModel(n) {
   const modelPath = (typeof n === 'object') ? n.path : n;
   const modelObj = (typeof n === 'object') ? n : models.find(m => (m.path || m) === n);
   curM = modelPath;
+      syncFamilyByModel(curM);
   document.getElementById('m-sel').value = modelPath;
   document.getElementById('cur-m').textContent = modelPath || '未选择';
   if (backendType === 'llama-cpp' && modelPath) {
@@ -501,7 +598,9 @@ async function loadLlamaModel(modelName, modelObj) {
   const originalText = btn.textContent;
   btn.textContent = '加载中...';
   try {
+    const nCtx = parseInt(document.getElementById('s-ctx-local')?.value) || 0;
     const body = { model: modelName, chat_handler: 'auto' };
+    if (nCtx > 0) body.n_ctx = nCtx;
     const res = await fetch('/api/llama/load_model', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -645,7 +744,6 @@ async function send() {
   toolsEnabled        = document.getElementById('tools-' + _p + '-enable')?.checked ?? false;
   thinkOutputEnabled  = document.getElementById('think-output-' + _p)?.checked ?? true;
   autoReviewEnabled   = document.getElementById('auto-review-' + _p)?.checked ?? false;
-  ctxExtEnabled       = document.getElementById('ctx-ext-' + _p)?.checked ?? true;
   minPromptEnabled    = document.getElementById('min-prompt-' + _p)?.checked ?? true;
 
   // 加载工具定义（如果启用工具调用）
@@ -685,6 +783,7 @@ async function send() {
 }
 
 async function sendLlama(content, systemPrompt, images, msgEl, signal) {
+  saveFamilyPreset();
   // 收集对话历史（多轮对话）
   const messages = [];
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -731,7 +830,6 @@ async function sendLlama(content, systemPrompt, images, msgEl, signal) {
     if (toolsEnabled && toolSchemas.length) body.tools = toolSchemas;
     body.think_output = thinkOutputEnabled;
     body.auto_review = autoReviewEnabled;
-    body.ctx_ext = ctxExtEnabled;
     body.min_prompt = minPromptEnabled;
 
     const res = await fetch('/api/llama/infer', {
@@ -998,7 +1096,6 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
     web_search: webSearchEnabled,  // 联网搜索开关：传至后端控制厂商原生搜索
     think_output: thinkOutputEnabled,  // 思考链输出
     auto_review: autoReviewEnabled,    // 自动审查
-    ctx_ext: ctxExtEnabled,            // 上下文扩展
     min_prompt: minPromptEnabled,      // 最小提示
   };
 
@@ -2145,7 +2242,7 @@ function us(k, sfx) {
     temp: 's-temp' + s, max: 's-max' + s, topp: 's-topp' + s,
     topk: 's-topk' + s, minp: 's-minp' + s, typicalp: 's-typicalp' + s,
     repp: 's-repp' + s, freqp: 's-freqp' + s, presp: 's-presp' + s,
-    miro: 's-miro' + s, miroe: 's-miroe' + s, mirot: 's-mirot' + s
+    miro: 's-miro' + s, miroe: 's-miroe' + s, mirot: 's-mirot' + s, ctx: 's-ctx' + s
   };
   const el = document.getElementById(map[k]);
   if (!el) return;

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -377,6 +377,22 @@
         <!-- 本地推理参数 -->
         <div class="set-sec" id="set-local-infer">
           <h2>🖥️ 本地推理参数 <span class="s-badge s-badge-local">本地</span></h2>
+                    <div class="s-row"><label>模型预设</label><select id="s-family-local" onchange="onFamilyChange()" style="width:200px">
+          <option value="default">默认</option>
+          <option value="minicpm">MiniCPM5</option>
+          <option value="gemma4">Gemma-4</option>
+          <option value="qwen35">Qwen3.5 / Qwen3.6</option>
+          </select></div>
+          
+          <div class="s-row"><label>上下文窗口</label><select id="s-ctx-local" onchange="us('ctx','local')" style="width:140px">
+            <option value="4096">4096</option>
+            <option value="8192">8192</option>
+            <option value="16384">16384</option>
+            <option value="32768">32768</option>
+            <option value="65536">65536 (推荐)</option>
+            <option value="98304">98304</option>
+            <option value="131072">131072</option>
+          </select></div>
           <div class="s-row"><label>Temperature</label><input type="range" id="s-temp-local" min="0" max="2" step=".01" value="0.8" oninput="us('temp','local')"><span class="s-val" id="v-temp-local">0.8</span></div>
           <div class="s-row"><label>Max Tokens</label><input type="range" id="s-max-local" min="256" max="8192" step="256" value="4096" oninput="us('max','local')"><span class="s-val" id="v-max-local">4096</span></div>
           <div class="s-row"><label>Top P</label><input type="range" id="s-topp-local" min="0" max="1" step=".01" value="0.9" oninput="us('topp','local')"><span class="s-val" id="v-topp-local">0.9</span></div>
@@ -395,7 +411,6 @@
           <div class="s-row"><label>思考输出</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="think-output-local"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>自动审查</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="auto-review-local"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>最小提示</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="min-prompt-local"><span class="toggle-slider"></span></label></div>
-          <div class="s-row"><label>上下文扩展</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="ctx-ext-local"><span class="toggle-slider"></span></label></div>
           <div id="tools-status-local" class="s-val" style="margin-top:6px;font-size:12px;color:var(--muted)"></div>
         </div>
         <!-- 厂商推理参数 -->
@@ -409,7 +424,6 @@
           <div class="s-row"><label>思考输出</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="think-output-vendor"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>自动审查</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="auto-review-vendor"><span class="toggle-slider"></span></label></div>
           <div class="s-row"><label>最小提示</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="min-prompt-vendor"><span class="toggle-slider"></span></label></div>
-          <div class="s-row"><label>上下文扩展</label><label class="toggle-lbl s-tgl"><input type="checkbox" id="ctx-ext-vendor"><span class="toggle-slider"></span></label></div>
           <div id="tools-status-vendor" class="s-val" style="margin-top:6px;font-size:12px;color:var(--muted);display:none"></div>
         </div>
         <div class="s-actions"><button class="s-save" onclick="saveSettings()">💾 保存设置</button><span class="s-msg" id="s-msg"></span></div>
