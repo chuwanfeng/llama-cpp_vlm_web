@@ -228,9 +228,74 @@ def skill_view(name: str) -> str:
                 output += f"标签: {', '.join(info['tags'])}\n"
             output += "\n---\n\n"
             output += info["content"]
+
+            # List available references
+            import os as _os
+            refs_dir = Path(info["skill_dir"]) / "references"
+            if refs_dir.exists() and refs_dir.is_dir():
+                ref_files = sorted([f for f in refs_dir.iterdir() if f.is_file()])
+                if ref_files:
+                    output += "\n\n## Available Reference Files\n\n"
+                    output += f"This skill has {len(ref_files)} reference file(s) in `references/`:\n\n"
+                    for rf in ref_files:
+                        size = rf.stat().st_size
+                        unit = "B"
+                        if size >= 1024:
+                            size //= 1024; unit = "KB"
+                        output += f"- `{rf.name}` ({size}{unit})\n"
+                    output += "\nUse `skill_reference` tool to load a reference file on demand.\n"
+
             return output
 
     return tool_error(f"未找到技能: {name}。使用 skills_list 查看可用技能列表。")
+
+def skill_reference(skill_name: str, ref_name: str) -> str:
+    """Read a specific reference file from a skill's references/ directory.
+
+    Use skill_view first to see available references, then call this tool
+    to load the one you need.
+
+    Args:
+        skill_name: The skill name (e.g. "h3-prompt-writing")
+        ref_name: The reference filename (e.g. "base-en.txt")
+    """
+    if not skill_name or not ref_name:
+        return tool_error("Please specify both skill_name and ref_name.")
+
+    skill_name = str(skill_name).strip()
+    ref_name = str(ref_name).strip()
+
+    if not _is_skill_name_safe(skill_name):
+        return tool_error("Invalid skill name: " + skill_name)
+
+    # Prevent path traversal
+    if ".." in ref_name or "/" in ref_name or "\\" in ref_name:
+        return tool_error("Invalid reference filename: " + ref_name)
+
+    for path in _discover_skill_files():
+        info = _load_skill(path)
+        if not info:
+            continue
+        if info.get("name") != skill_name and path.parent.name != skill_name:
+            continue
+        ref_path = path.parent / "references" / ref_name
+        if not ref_path.exists():
+            available = []
+            refs_dir = path.parent / "references"
+            if refs_dir.exists():
+                available = [f.name for f in refs_dir.iterdir() if f.is_file()]
+            msg = "Reference file '" + ref_name + "' not found."
+            if available:
+                msg += " Available: " + ", ".join(available)
+            return tool_error(msg)
+
+        try:
+            content = ref_path.read_text(encoding="utf-8")
+            return "## Reference: " + ref_name + "\n\n" + content
+        except Exception as e:
+            return tool_error("Failed to read: " + str(e))
+
+    return tool_error("Skill not found: " + skill_name)
 
 
 def skill_delete(name: str) -> str:
@@ -242,12 +307,16 @@ def skill_delete(name: str) -> str:
 
     name = str(name).strip()
     for path in _discover_skill_files():
-        if path.parent.name == name:
-            try:
-                shutil.rmtree(str(path.parent))
-                return f"技能 '{name}' 已删除。"
-            except Exception as e:
-                return tool_error(f"删除失败: {e}")
+        info = _load_skill(path)
+        if not info:
+            continue
+        if info.get("name") != name and path.parent.name != name:
+            continue
+        try:
+            shutil.rmtree(str(path.parent))
+            return f"技能 '{name}' 已删除。"
+        except Exception as e:
+            return tool_error(f"删除失败: {e}")
 
     return tool_error(f"未找到技能: {name}")
 
@@ -293,3 +362,20 @@ registry.register(
     handler=skill_view,
     check_fn=check_skills_requirements,
 )
+SKILL_REFERENCE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "skill_name": {"type": "string", "description": "Skill name."},
+        "ref_name": {"type": "string", "description": "Reference filename to load (e.g. base-en.txt). Use skill_view first to see available files."},
+    },
+    "required": ["skill_name", "ref_name"],
+}
+
+registry.register(
+    name="skill_reference",
+    toolset="skills",
+    schema=SKILL_REFERENCE_SCHEMA,
+    handler=skill_reference,
+    check_fn=check_skills_requirements,
+)
+

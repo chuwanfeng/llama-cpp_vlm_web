@@ -12,6 +12,10 @@ echo Starting Llama-cpp VLM Web on port %PORT%...
 echo Open http://localhost:%PORT% in your browser
 echo.
 
+set KMP_DUPLICATE_LIB_OK=TRUE
+
+REM Use scoop Python (has torch + llama-cpp-python)
+set PATH=D:\Scoop\apps\python312\current;%PATH%
 python main.py %PORT%
 
 pause

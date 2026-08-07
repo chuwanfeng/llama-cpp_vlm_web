@@ -17,6 +17,7 @@ let _fullMessages = []; // 完整消息历史（含 tool calls/results）
 let _currentAssistantMsg = null; // 当前助手消息（streaming 中构建）
 let _lastToolCallId = null;
 let auxConfig = { enabled: false, provider: '', model: '', tasks: ['compression'] };
+
 let auxProviders = [];  // available providers for aux dropdown
 var toolsEnabled = false;  // 工具调用开关（var 使 window.toolsEnabled 生效，_SF 注册表通过 window[d.var] 访问）
 var thinkOutputEnabled = true;    // 思考链输出开关
@@ -2074,7 +2075,7 @@ async function loadT() {
 
 function renderTemplateSelect() {
   const s = document.getElementById('tpl-sel');
-  s.innerHTML = '<option value="">普通对话</option>' + tpls.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+  s.innerHTML = '<option value="">\u666e\u901a\u5bf9\u8bdd</option>' + tpls.map(t => '<option value="' + esc(t.id) + '">' + esc(t.name) + '</option>').join('');
 }
 
 function renderTemplatesList() {
