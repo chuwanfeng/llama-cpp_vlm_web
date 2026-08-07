@@ -55,8 +55,12 @@ python main.py
 
 ```powershell
 # 安装 CUDA 版 llama-cpp-python
-pip install torch --index-url https://download.pytorch.org/whl/cu121
-pip install llama-cpp-python --index-url https://jamepeng.github.io/whl/cu121
+pip install torch --index-url https://download.pytorch.org/whl/cu130
+
+$env:CMAKE_ARGS = "-DGGML_CUDA=on"
+pip install "llama-cpp-python @ git+https://github.com/JamePeng/llama-cpp-python.git"
+# 或者，下载对应您机器环境的whl文件安装
+https://github.com/JamePeng/llama-cpp-python/releases
 
 # 放置模型（GGUF + mmproj 同目录）
 # 默认目录: D:\Scoop\LLM\
