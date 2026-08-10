@@ -93,8 +93,14 @@ def _get_vendor_creds(vendor_id: str) -> dict:
 def _build_loop(data: dict, messages: list) -> AgentLoop:
     """根据请求参数构建 AgentLoop 实例"""
     registry = get_registry()
-    tool_schemas = [t.to_openai_schema() for t in registry.list_available()]
-    valid_tool_names = {t.name for t in registry.list_available()}
+    tools_enabled = data.get("tools_enabled", True)
+
+    if tools_enabled:
+        tool_schemas = [t.to_openai_schema() for t in registry.list_available()]
+        valid_tool_names = {t.name for t in registry.list_available()}
+    else:
+        tool_schemas = []
+        valid_tool_names = set()
 
     vendor_id = data.get("vendor_id", "")
 
@@ -200,9 +206,31 @@ def agent_chat():
 
     loop = _build_loop(data, messages)
 
-    # 自动构建系统提示词（含工具描述 + 平台信息）
-    tool_schemas = [t.to_openai_schema() for t in get_registry().list_available()]
-    messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"), min_prompt=data.get("min_prompt", True))
+    # 按 tools_enabled 决定是否注入系统提示词
+    tools_enabled = data.get("tools_enabled", True)
+    if tools_enabled:
+        tool_schemas = [t.to_openai_schema() for t in get_registry().list_available()]
+        messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"), min_prompt=data.get("min_prompt", True))
+    else:
+        has_system = any(m.get("role") == "system" for m in messages)
+        if not has_system:
+            messages.insert(0, {"role": "system", "content": "你是 AI 助手，直接回答用户问题，不要输出工具调用格式。"})
+
+    # ── 注入 Skill 技能清单（渐进式暴露：只给引导，不列详情）──
+    if tools_enabled:
+        for msg in messages:
+            if msg.get("role") == "system":
+                msg["content"] = msg.get("content", "") + (
+                    "\n\n---\n"
+                    "## 专业技能库\n"
+                    "你有专业技能可用。当用户需求涉及以下领域时，**必须先调用 `skills_list` 工具**查看所有可用技能：\n"
+                    "- 视频/动画生成（H3提示词编写）\n"
+                    "- 图片生成（优化提示词）\n"
+                    "- 网页/UI 设计\n"
+                    "**工作流：** skills_list → skill_view(技能名) → skill_reference(技能名, 文件名) → 生成结果\n"
+                    "**注意：** skills_list / skill_view / skill_reference 是工具函数，不是普通对话。"
+                )
+                break
 
     try:
         result = asyncio.run(loop.run(messages))
@@ -255,9 +283,31 @@ def agent_chat_stream():
 
     loop = _build_loop(data, messages)
 
-    # 自动构建系统提示词（含工具描述 + 平台信息）
-    tool_schemas = [t.to_openai_schema() for t in get_registry().list_available()]
-    messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"), min_prompt=data.get("min_prompt", True))
+    # 按 tools_enabled 决定是否注入系统提示词
+    tools_enabled = data.get("tools_enabled", True)
+    if tools_enabled:
+        tool_schemas = [t.to_openai_schema() for t in get_registry().list_available()]
+        messages = _inject_system_prompt(messages, tool_schemas, cwd=data.get("cwd"), min_prompt=data.get("min_prompt", True))
+    else:
+        has_system = any(m.get("role") == "system" for m in messages)
+        if not has_system:
+            messages.insert(0, {"role": "system", "content": "你是 AI 助手，直接回答用户问题，不要输出工具调用格式。"})
+
+    # ── 注入 Skill 技能清单（渐进式暴露：只给引导，不列详情）──
+    if tools_enabled:
+        for msg in messages:
+            if msg.get("role") == "system":
+                msg["content"] = msg.get("content", "") + (
+                    "\n\n---\n"
+                    "## 专业技能库\n"
+                    "你有专业技能可用。当用户需求涉及以下领域时，**必须先调用 `skills_list` 工具**查看所有可用技能：\n"
+                    "- 视频/动画生成（H3提示词编写）\n"
+                    "- 图片生成（优化提示词）\n"
+                    "- 网页/UI 设计\n"
+                    "**工作流：** skills_list → skill_view(技能名) → skill_reference(技能名, 文件名) → 生成结果\n"
+                    "**注意：** skills_list / skill_view / skill_reference 是工具函数，不是普通对话。"
+                )
+                break
 
     def generate():
         event_queue = queue.Queue()

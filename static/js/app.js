@@ -1072,8 +1072,6 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
     if (!model) { msgEl.querySelector('.ct').innerHTML = '<span class="err">已取消</span>'; return; }
   }
 
-  const maxToolTurns = toolsEnabled && toolSchemas.length ? 5 : 1;
-
   // 创建/清空 bubble（多轮工具调用复用同一个 bubble）
   const ctElement = msgEl.querySelector('.ct');
   let bubble = ctElement.querySelector('.msg-bubble');
@@ -1098,11 +1096,12 @@ async function sendVendor(content, systemPrompt, images, msgEl, signal, override
     max_tokens: parseInt(document.getElementById('s-max-vendor').value),
     temperature: parseFloat(document.getElementById('s-temp-vendor').value),
     top_p: parseFloat(document.getElementById('s-topp-vendor').value),
-    plan_mode: planModeEnabled,  // Plan 模式：不执行工具，返回计划
-    web_search: webSearchEnabled,  // 联网搜索开关：传至后端控制厂商原生搜索
-    think_output: thinkOutputEnabled,  // 思考链输出
-    auto_review: autoReviewEnabled,    // 自动审查
-    min_prompt: minPromptEnabled,      // 最小提示
+    tools_enabled: toolsEnabled,      // 工具+skill 开关（关闭时不注入 tools）
+    plan_mode: planModeEnabled,       // Plan 模式：不执行工具，返回计划
+    web_search: webSearchEnabled,     // 联网搜索开关
+    think_output: thinkOutputEnabled, // 思考链输出
+    auto_review: autoReviewEnabled,   // 对话完成后自动审查
+    min_prompt: minPromptEnabled,     // 最小提示
   };
 
   const res = await fetch('/api/agent/chat/stream', {
@@ -4300,7 +4299,6 @@ function onCloudImageChange() {
 
 // ── 对话历史加载时自动更新生成配置 ──
 // (确保生成面板在首次打开时数据已就绪)
-const _origLoadChat = loadChat || function(){};
 if (typeof loadChat === 'function') {
   const _orig = loadChat;
   loadChat = function() { _orig(); loadGenerationConfig(); };
