@@ -1463,11 +1463,13 @@ def infer(prompt=None, messages=None, images=None, system=None, stream=False, **
     total_imgs = sum(1 for m in chat_messages if isinstance(m.get("content"), list))
     log.warning("[INFER] 消息: %d条, 总字符: %d, 图片: %d, 工具: %d",
                 len(chat_messages), total_chars, total_imgs, len(tools) if tools else 0)
-    log.warning("[INFER] 采样: temp=%.2f top_p=%.2f top_k=%d min_p=%.3f pres_pen=%.2f freq_pen=%.2f max_tok=%d",
+    log.warning("[INFER] 采样: temp=%.2f top_p=%.2f top_k=%d min_p=%.3f typical_p=%.2f rep_pen=%.2f pres_pen=%.2f freq_pen=%.2f miro_m=%d miro_e=%.2f miro_t=%.2f max_tok=%d",
                 gen_params.get("temperature", 0.8), gen_params.get("top_p", 0.9),
                 gen_params.get("top_k", 40), gen_params.get("min_p", 0.0),
+                gen_params.get("typical_p", 1.0), gen_params.get("repeat_penalty", 1.0),
                 gen_params.get("present_penalty", 1.0), gen_params.get("frequency_penalty", 0.0),
-                gen_params.get("max_tokens", 4096))
+                gen_params.get("mirostat_mode", 0), gen_params.get("mirostat_eta", 0.1),
+                gen_params.get("mirostat_tau", 5.0), gen_params.get("max_tokens", 4096))
     for idx, m in enumerate(chat_messages):
         role = m.get("role", "?")
         content = m.get("content", "")
@@ -1493,19 +1495,7 @@ def infer(prompt=None, messages=None, images=None, system=None, stream=False, **
     log.warning("[INFER] ========================================")
 
 
-    # CPU 模式优化：降低 top_k 和温度
-
-
-    if not HAVE_GPU:
-
-
-        gen_params["top_k"] = min(gen_params.get("top_k") or 40, 20)
-
-
-        gen_params["temperature"] = max(gen_params.get("temperature") or 0.7, 0.5)
-
-
-    
+     
 
 
     # 检测 R1 风格思考模型（MiniCPM5-Thinking 等）
