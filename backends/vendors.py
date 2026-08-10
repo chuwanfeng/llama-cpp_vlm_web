@@ -1,4 +1,4 @@
-"""
+﻿"""
 厂商 API 后端 — 支持 OpenAI / DeepSeek / Anthropic / Gemini / 通义千问 / 智谱 / Moonshot / 自定义
 参考 hermes-agent 的 providers.py 架构，简化适配 Web Chat UI。
 """
@@ -279,14 +279,15 @@ def _openai_stream(model: str, messages: list, api_key: str, base_url: str,
         max_tokens=params.get("max_tokens") or 4096,
         temperature=params.get("temperature", 0.7),
         top_p=params.get("top_p", 0.9),
-        stream_options={"include_usage": True},
     )
 
     if tools:
         create_kwargs["tools"] = tools
         create_kwargs["tool_choice"] = tool_choice
-        _tnames = [t.get("function", {}).get("name", "?") for t in tools]
-        log.info("vendors._openai_stream: tools=%d 个, 含 delegate_task=%s", len(tools), "delegate_task" in _tnames)
+
+    # Only add stream_options for OpenAI/DeepSeek (others may not support it)
+    if "openai.com" in (base_url or "") or "deepseek" in (base_url or ""):
+        create_kwargs["stream_options"] = {"include_usage": True}
 
     # DeepSeek 内置搜索: 通过 extra_body 传递 enable_search 参数
     if params.get("enable_search"):
@@ -298,7 +299,6 @@ def _openai_stream(model: str, messages: list, api_key: str, base_url: str,
 
     # 工具调用积攒（OpenAI 流式 tool_calls 逐块返回）
     _tc_acc: dict = {}
-    # 推理内容积攒（DeepSeek / Zhipu thinking 模式会逐块返回 reasoning_content）
     reasoning_content = ""
 
     for chunk in stream:
@@ -341,8 +341,7 @@ def _openai_stream(model: str, messages: list, api_key: str, base_url: str,
                 sorted_tcs = [_tc_acc[i] for i in sorted(_tc_acc.keys())]
                 yield {"tool_calls": sorted_tcs, "finish_reason": finish_reason}
                 _tc_acc.clear()
-            elif not reasoning_content:
-                # 非工具调用的结束信号（可选）——
+            else:
                 yield {"finish_reason": finish_reason}
 
 

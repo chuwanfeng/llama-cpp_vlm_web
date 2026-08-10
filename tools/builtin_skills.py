@@ -181,6 +181,7 @@ def skills_list(**kwargs) -> str:
             "description": info["description"],
             "priority": info.get("priority"),
             "tags": info.get("tags", []),
+            "skill_dir": path.parent.name,
         })
 
     if not skills:
@@ -189,10 +190,63 @@ def skills_list(**kwargs) -> str:
 
     skills.sort(key=lambda s: s.get("priority", 0) or 0, reverse=True)
 
-    lines = [f"共 {len(skills)} 个技能："]
-    for i, s in enumerate(skills):
-        tag_str = f" [{', '.join(s.get('tags', []))}]" if s.get('tags') else ""
-        lines.append(f"{i + 1}. **{s['name']}**{tag_str}: {s['description']}")
+    # Categorize by usage scenario
+    video_animation = []
+    video_style = []
+    prompt_tools = []
+    other = []
+
+    anim_names = {"3d-animation-short-generator", "papercraft-stop-motion-explainer",
+                  "paper-collage-explainer-generator", "handdrawn-live-video-generator"}
+    style_names = {"brand-promo-video-generator", "co-op-game-intro-generator",
+                   "minimalist-product-ad-generator", "music-video-subtitle-generator"}
+    prompt_names = {"h3-prompt-writing", "ai-video-prompting", "z_image_turbo_prompt_master"}
+
+    for s in skills:
+        n = s["name"]
+        if n in anim_names:
+            video_animation.append(s)
+        elif n in style_names:
+            video_style.append(s)
+        elif n in prompt_names:
+            prompt_tools.append(s)
+        else:
+            other.append(s)
+
+    lines = [f"共 {len(skills)} 个技能：", ""]
+
+    if prompt_tools:
+        lines.append("## 提示词生成（先选这类！把用户需求转成规范提示词）")
+        for i, s in enumerate(prompt_tools):
+            lines.append(f"  • **{s['name']}** — {s['description']}")
+        lines.append("")
+        lines.append("**场景匹配规则：**")
+        lines.append('- 自然风景/真实风格视频/慢镜头/人像 → 选 **h3-prompt-writing**（T2VA 模式）')
+        lines.append('- 3D卡通动画/角色动画/叙事短片 → 选 **3d-animation-short-generator**')
+        lines.append('- Z-Image 图片生成 → 选 **z_image_turbo_prompt_master**')
+        lines.append('- 通用视频提示词方法论 → 选 **ai-video-prompting**')
+        lines.append("")
+
+    if video_animation:
+        lines.append("## 视频风格：动画类")
+        for i, s in enumerate(video_animation):
+            lines.append(f"  • **{s['name']}** — {s['description']}")
+        lines.append("")
+
+    if video_style:
+        lines.append("## 视频风格：营销/自媒体类")
+        for i, s in enumerate(video_style):
+            lines.append(f"  • **{s['name']}** — {s['description']}")
+        lines.append("")
+
+    if other:
+        lines.append("## 其他")
+        for i, s in enumerate(other):
+            lines.append(f"  • **{s['name']}** — {s['description']}")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("使用方式：skills_list 查看列表 → skill_view(名称) 加载指令 → skill_reference(名称, 文件名) 读参考文件 → 生成")
     return "\n".join(lines)
 
 
@@ -210,42 +264,42 @@ def skill_view(name: str) -> str:
         return tool_error(f"技能名称不安全: {name}")
 
     for path in _discover_skill_files():
-        if path.parent.name == name:
-            info = _load_skill(path)
-            if not info:
-                return tool_error(f"无法读取技能: {name}")
-            if info.get("name") != name:
-                continue
+        info = _load_skill(path)
+        if not info:
+            continue
+        # Match by frontmatter name or directory name
+        if info.get("name") != name and path.parent.name != name:
+            continue
 
-            output = f"## {info['name']}\n\n"
-            if info["description"]:
-                output += f"*{info['description']}*\n\n"
-            if info.get("version"):
-                output += f"版本: {info['version']} | "
-            if info.get("author"):
-                output += f"作者: {info['author']}\n"
-            if info.get("tags"):
-                output += f"标签: {', '.join(info['tags'])}\n"
-            output += "\n---\n\n"
-            output += info["content"]
+        output = f"## {info['name']}\n\n"
+        if info["description"]:
+            output += f"*{info['description']}*\n\n"
+        if info.get("version"):
+            output += f"版本: {info['version']} | "
+        if info.get("author"):
+            output += f"作者: {info['author']}\n"
+        if info.get("tags"):
+            output += f"标签: {', '.join(info['tags'])}\n"
+        output += "\n---\n\n"
+        output += info["content"]
 
-            # List available references
-            import os as _os
-            refs_dir = Path(info["skill_dir"]) / "references"
-            if refs_dir.exists() and refs_dir.is_dir():
-                ref_files = sorted([f for f in refs_dir.iterdir() if f.is_file()])
-                if ref_files:
-                    output += "\n\n## Available Reference Files\n\n"
-                    output += f"This skill has {len(ref_files)} reference file(s) in `references/`:\n\n"
-                    for rf in ref_files:
-                        size = rf.stat().st_size
-                        unit = "B"
-                        if size >= 1024:
-                            size //= 1024; unit = "KB"
-                        output += f"- `{rf.name}` ({size}{unit})\n"
-                    output += "\nUse `skill_reference` tool to load a reference file on demand.\n"
+        # List available references
+        import os as _os
+        refs_dir = Path(info["skill_dir"]) / "references"
+        if refs_dir.exists() and refs_dir.is_dir():
+            ref_files = sorted([f for f in refs_dir.iterdir() if f.is_file()])
+            if ref_files:
+                output += "\n\n## Available Reference Files\n\n"
+                output += f"This skill has {len(ref_files)} reference file(s) in `references/`:\n\n"
+                for rf in ref_files:
+                    size = rf.stat().st_size
+                    unit = "B"
+                    if size >= 1024:
+                        size //= 1024; unit = "KB"
+                    output += f"- `{rf.name}` ({size}{unit})\n"
+                output += "\nUse `skill_reference` tool to load a reference file on demand.\n"
 
-            return output
+        return output
 
     return tool_error(f"未找到技能: {name}。使用 skills_list 查看可用技能列表。")
 

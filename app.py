@@ -1752,53 +1752,121 @@ def api_vendors_chat():
 
         from backends.vendors import chat_stream
 
+        from tools.registry import registry
 
+        MAX_TOOL_ROUNDS = 10
+
+        def _is_skill_tool(name):
+            return name in ("skills_list", "skill_view", "skill_reference")
 
         def generate():
 
-            try:
+            cur_messages = list(messages)
+            cur_tools = tools
 
-                for chunk in chat_stream(
+            for _round in range(MAX_TOOL_ROUNDS):
 
-                    vendor_id=vendor_id,
+                tool_calls = None
 
-                    model=model,
+                try:
 
-                    messages=messages,
+                    for chunk in chat_stream(
 
-                    api_key=data.get("api_key", ""),
+                        vendor_id=vendor_id,
 
-                    base_url=data.get("base_url", ""),
+                        model=model,
 
-                    max_tokens=data.get("max_tokens"),
+                        messages=cur_messages,
 
-                    temperature=data.get("temperature"),
+                        api_key=data.get("api_key", ""),
 
-                    top_p=data.get("top_p"),
+                        base_url=data.get("base_url", ""),
 
-                    tools=tools,
+                        max_tokens=data.get("max_tokens"),
 
-                    tool_choice=tool_choice,
+                        temperature=data.get("temperature"),
 
-                ):
+                        top_p=data.get("top_p"),
 
-                    if isinstance(chunk, dict):
+                        tools=cur_tools,
 
-                        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                        tool_choice=tool_choice,
 
-                    else:
+                    ):
 
-                        yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
+                        if isinstance(chunk, dict):
 
-                yield "data: [DONE]\n\n"
+                            # Don't yield tool_calls finishing chunk to client
 
-            except Exception as e:
+                            if chunk.get("tool_calls"):
 
-                log.error("厂商流式错误: %s", e)
+                                tool_calls = chunk["tool_calls"]
 
-                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+                            else:
 
+                                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
+                        else:
+
+                            yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
+
+                except Exception as e:
+
+                    log.error("厂商流式错误: %s", e)
+
+                    yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+
+                    return
+
+                # No tool calls → done
+
+                if not tool_calls:
+
+                    break
+
+                # Execute tools and append results for next round
+
+                log.info("vendor chat round %d: executing %d tool call(s)", _round + 1, len(tool_calls))
+
+                cur_messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+
+                for tc in tool_calls:
+
+                    fn = tc.get("function", {})
+
+                    t_name = fn.get("name", "")
+
+                    try:
+
+                        t_args = json.loads(fn.get("arguments", "{}")) if isinstance(fn.get("arguments"), str) else (fn.get("arguments") or {})
+
+                    except Exception:
+
+                        t_args = {}
+
+                    # Execute via registry
+
+                    try:
+
+                        t_result = registry.execute_sync(t_name, t_args)
+
+                    except Exception as e:
+
+                        t_result = f"Error: {e}"
+
+                    cur_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": str(t_result)
+                    })
+
+                # For skill tools, continue loop; for others, break after one round
+
+                if tool_calls and not any(_is_skill_tool(tc.get("function", {}).get("name", "")) for tc in tool_calls):
+
+                    break
+
+            yield "data: [DONE]\n\n"
 
         return Response(stream_with_context(generate()), mimetype="text/event-stream")
 
