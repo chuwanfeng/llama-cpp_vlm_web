@@ -1577,34 +1577,160 @@ def infer(prompt=None, messages=None, images=None, system=None, stream=False, **
 
 
 
-            for chunk in _model.create_chat_completion(messages=chat_messages, tools=tools, **gen_params):
+            try:
+                for chunk in _model.create_chat_completion(messages=chat_messages, tools=tools, **gen_params):
 
 
-                if "choices" in chunk and len(chunk["choices"]) > 0:
+                    if "choices" in chunk and len(chunk["choices"]) > 0:
 
 
-                    delta = chunk["choices"][0].get("delta", {})
+                        delta = chunk["choices"][0].get("delta", {})
 
 
-                    content = delta.get("content", "")
+                        content = delta.get("content", "")
 
 
-                    reasoning = delta.get("reasoning_content", "")
+                        reasoning = delta.get("reasoning_content", "")
 
 
-                    tool_calls = delta.get("tool_calls")
+                        tool_calls = delta.get("tool_calls")
 
 
 
 
 
-                    if is_r1_thinking:
+                        if is_r1_thinking:
 
 
-                        if r1_split_found:
+                            if r1_split_found:
 
 
-                            # 已在  之后，正常流式输出
+                                # 已在  之后，正常流式输出
+
+
+                                if content:
+
+
+                                    yield {"content": content}
+
+
+                                if reasoning:
+
+
+                                    yield {"reasoning_content": reasoning}
+
+
+                                if tool_calls:
+
+
+                                    yield {"tool_calls": tool_calls}
+
+
+                            elif content:
+
+
+                                # 直接收到 content（模型 chat_format 正常工作了）
+
+
+                                # 先把积累的 reasoning 发出，再切换到 content 模式
+
+
+                                if r1_buffer:
+
+
+                                    yield {"reasoning_content": r1_buffer}
+
+
+                                    r1_buffer = ""
+
+
+                                r1_split_found = True
+
+
+                                yield {"content": content}
+
+
+                                if reasoning:
+
+
+                                    yield {"reasoning_content": reasoning}
+
+
+                            elif reasoning:
+
+
+                                # 收到 reasoning 但没有 content → 静默缓冲
+
+
+                                r1_buffer += reasoning
+
+
+                                # 尝试检测  分隔点（llama-cpp-python 可能已剥离标签）
+
+
+                                think_start = "<" + "think" + ">"
+                                think_end = "<" + "/think" + ">"
+                                sep_pos = -1
+
+
+                                sep_len = 0
+
+
+                                # 检测行首的结束标签
+
+
+                                if think_end in r1_buffer:
+
+
+                                    sep_pos = r1_buffer.rfind(think_end)
+
+
+                                    sep_len = len(think_end)
+
+
+                                if sep_pos >= 0 and sep_pos + sep_len < len(r1_buffer):
+
+
+                                    # 找到了标签且有后续内容
+
+
+                                    r1_split_found = True
+
+
+                                    prefix = r1_buffer[:sep_pos + sep_len]
+
+
+                                    suffix = r1_buffer[sep_pos + sep_len:]
+
+
+                                    if prefix:
+
+
+                                        yield {"reasoning_content": prefix}
+
+
+                                    if suffix:
+
+
+                                        yield {"content": suffix}
+
+
+                                    r1_buffer = ""
+
+
+                                # 未找到分隔点 → 继续静默缓冲（不 yield ）
+
+
+                            # else: 既无 reasoning 也无 content，等待下一个 chunk
+
+
+                        else:
+
+
+                            if reasoning:
+
+
+                                yield {"reasoning_content": reasoning}
 
 
                             if content:
@@ -1613,141 +1739,20 @@ def infer(prompt=None, messages=None, images=None, system=None, stream=False, **
                                 yield {"content": content}
 
 
-                            if reasoning:
-
-
-                                yield {"reasoning_content": reasoning}
-
-
                             if tool_calls:
 
 
                                 yield {"tool_calls": tool_calls}
 
 
-                        elif content:
 
 
-                            # 直接收到 content（模型 chat_format 正常工作了）
 
-
-                            # 先把积累的 reasoning 发出，再切换到 content 模式
-
-
-                            if r1_buffer:
-
-
-                                yield {"reasoning_content": r1_buffer}
-
-
-                                r1_buffer = ""
-
-
-                            r1_split_found = True
-
-
-                            yield {"content": content}
-
-
-                            if reasoning:
-
-
-                                yield {"reasoning_content": reasoning}
-
-
-                        elif reasoning:
-
-
-                            # 收到 reasoning 但没有 content → 静默缓冲
-
-
-                            r1_buffer += reasoning
-
-
-                            # 尝试检测  分隔点（llama-cpp-python 可能已剥离标签）
-
-
-                            think_start = "<" + "think" + ">"
-                            think_end = "<" + "/think" + ">"
-                            sep_pos = -1
-
-
-                            sep_len = 0
-
-
-                            # 检测行首的结束标签
-
-
-                            if think_end in r1_buffer:
-
-
-                                sep_pos = r1_buffer.rfind(think_end)
-
-
-                                sep_len = len(think_end)
-
-
-                            if sep_pos >= 0 and sep_pos + sep_len < len(r1_buffer):
-
-
-                                # 找到了标签且有后续内容
-
-
-                                r1_split_found = True
-
-
-                                prefix = r1_buffer[:sep_pos + sep_len]
-
-
-                                suffix = r1_buffer[sep_pos + sep_len:]
-
-
-                                if prefix:
-
-
-                                    yield {"reasoning_content": prefix}
-
-
-                                if suffix:
-
-
-                                    yield {"content": suffix}
-
-
-                                r1_buffer = ""
-
-
-                            # 未找到分隔点 → 继续静默缓冲（不 yield ）
-
-
-                        # else: 既无 reasoning 也无 content，等待下一个 chunk
-
-
-                    else:
-
-
-                        if reasoning:
-
-
-                            yield {"reasoning_content": reasoning}
-
-
-                        if content:
-
-
-                            yield {"content": content}
-
-
-                        if tool_calls:
-
-
-                            yield {"tool_calls": tool_calls}
-
-
-
-
-
-            # 流结束回退：如果 R1 模型缓冲了内容但没有找到分隔点，
+
+            except GeneratorExit:
+                log.info("[GPU] 客户端断开连接，已停止推理")
+            except Exception as e:
+                log.error("[GPU] 流式推理异常: %s", e)            # 流结束回退：如果 R1 模型缓冲了内容但没有找到分隔点，
 
 
             # 说明 llama-cpp-python 已剥离  标签且 chat_format 未正确分离
